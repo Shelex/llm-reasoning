@@ -50,18 +50,24 @@ export function createRoutes(
                     query
                 );
                 response = result.response;
-                usedStrategy = result.selectedStrategy.name;
             } else {
-                console.log(`🏎️ [DIRECT] Starting direct query processing for chatId: ${chatId}`);
+                console.log(
+                    `🏎️ [DIRECT] Starting direct query processing for chatId: ${chatId}`
+                );
                 console.log(`📝 [DIRECT] Query: ${query}`);
-                console.log(`⚡ [DIRECT] Bypassing orchestrator - sending directly to LLM`);
-                
+                console.log(
+                    `⚡ [DIRECT] Bypassing orchestrator - sending directly to LLM`
+                );
+
                 const llmResponse = await llmClient.queryLLM(query);
                 response = llmResponse.content;
-                usedStrategy = "direct";
-                
+
                 console.log(`✅ [DIRECT] Direct query completed successfully`);
-                console.log(`📊 [DIRECT] Response confidence: ${llmResponse.confidence ?? 'N/A'}`);
+                console.log(
+                    `📊 [DIRECT] Response confidence: ${
+                        llmResponse.confidence ?? "N/A"
+                    }`
+                );
             }
 
             chatService.addMessage(chatId, "assistant", response);
@@ -70,8 +76,6 @@ export function createRoutes(
                 chatId,
                 response,
                 reasoning: reason,
-                strategy: usedStrategy,
-                strategyReasoning: reason,
             });
         } catch (error) {
             console.error("Chat ask error:", error);

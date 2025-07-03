@@ -9,17 +9,21 @@ A TypeScript backend that's basically like giving your LLM a PhD in overthinking
 This abomination of code takes your innocent little questions and puts them through a meat grinder of reasoning (LMAO) strategies. It's like having a very anxious AI assistant that second-guesses itself so much it takes an eternity to get something out of it.
 
 ## Example
-- M1 Pro, 16GB RAM
-- LM Studio: `llama-3.2-3b-instruct` Q4_K_S GGUF (1.93 Gb), context window of 4k tokens.
-- started dev server
-- created chat POST /api/chat/create
+
+-   M1 Pro, 16GB RAM
+-   LM Studio: `llama-3.2-3b-instruct` Q4_K_S GGUF (1.93 Gb), context window of 4k tokens.
+-   started dev server
+-   created chat POST /api/chat/create
+
 ```json
 {
     "chatId": "73d01f65-758f-48a6-9261-6e41460e13b5",
     "status": "created"
 }
 ```
-- sent the question via api:
+
+-   sent the question via api:
+
 ```
 {
     "reason": true,
@@ -27,7 +31,8 @@ This abomination of code takes your innocent little questions and puts them thro
 }
 ```
 
-- logs:
+-   logs:
+
 ```
 🚀 [ORCHESTRATOR] Starting query processing for chatId: 73d01f65-758f-48a6-9261-6e41460e13b5
 📋 [ORCHESTRATOR] Query: What are the ways to improve the accuracy of answers from LLM?
@@ -80,7 +85,9 @@ This abomination of code takes your innocent little questions and puts them thro
 🎨 [ORCHESTRATOR] Answer beautification completed
 🎉 [ORCHESTRATOR] Query processing completed successfully
 ```
-- answer:
+
+-   answer:
+
 ```text
 Improving the accuracy of answers from Large Language Models (LLMs) is an area of ongoing research, and it requires a combination of various techniques. Let's break down some of the key strategies that can help.
 First and foremost, data preprocessing plays a crucial role in improving LLM accuracy. This involves handling missing values, removing noise, tokenizing text, and converting data into a suitable format for LLMs. A study published in the Journal of Artificial Intelligence Research found that even small improvements in data preprocessing can lead to significant gains in model performance (Chen et al., 2020). For example, the Hugging Face team demonstrated a 10% increase in accuracy after applying a set of preprocessing techniques (Devlin et al., 2019).
@@ -99,7 +106,8 @@ Keskar, N., et al. (2016). On the effectiveness of knowledge distillation. Proce
 Huang, X., et al. (2020). Model size matters: An empirical study on the impact of model size on language modeling performance. arXiv preprint arXiv:2003.04455"
 ```
 
-- Seems not bad, huh, for `llama-3.2-3b-instruct` (1.93Gb) on m1 pro and context window of 4k tokens.
+-   Seems not bad, huh, for `llama-3.2-3b-instruct` (1.93Gb) on m1 pro and context window of 4k tokens.
+    However, have tried with `Llama-3.2-1B-Instruct-4bit` with MLX - and with low parameters it fails to calculate confidence and properly structure the output, maybe additional prompt-tuning is required.
 
 ### The Gang
 
@@ -152,6 +160,7 @@ npm run dev
 -   `GET /api/chats` - Just in case you have lost that one chat id
 
 ### Question management
+
 -   `POST /api/chat/:id/ask` - Ask your question and watch the loading for some time. Answer is optional if request will not be killed by timeout
 
 **Request Body Schema:**
@@ -164,6 +173,7 @@ npm run dev
 ```
 
 ### Health Check
+
 -   `GET /api/health` - Check if the backend is still alive or just pretending
 
 ## Reasoning Strategies
@@ -195,7 +205,7 @@ The retry system is basically digital gaslighting - we tell the AI its first ans
 
 ## Console Log Spam
 
-The orchestrator service logs literally everything, this feature was added with claude code (at least we found some feature it is good at). Cringe emoji included, glad you asked.  
+The orchestrator service logs literally everything, this feature was added with claude code (at least we found some feature it is good at). Cringe emoji included, glad you asked.
 
 ## Environment Variables (The Sacred Texts)
 

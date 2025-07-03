@@ -16,8 +16,9 @@ Consider:
 - Certainty of language used
 - Completeness of answer
 - Presence of uncertainty words
+- Do not specify the reasoning process, just provide a confidence score.
 
-Respond with only a number (e.g., 0.85):`;
+Respond with only a number (e.g., 0.85)`;
 
             const response = await this.llmClient.queryLLMRaw(
                 confidencePrompt,

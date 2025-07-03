@@ -24,7 +24,7 @@ export class OrchestratorService extends EventEmitter {
     async processQuery(
         chatId: string,
         query: string
-    ): Promise<{ response: string; selectedStrategy: ReasoningStrategy }> {
+    ): Promise<{ response: string }> {
         console.log(
             `🚀 [ORCHESTRATOR] Starting query processing for chatId: ${chatId}`
         );
@@ -102,25 +102,13 @@ export class OrchestratorService extends EventEmitter {
             results
         );
 
-        await this.ragService.addContext(
-            chatId,
-            `Final answer: ${finalAnswer}`,
-            {
-                type: "final_answer",
-                originalQuery: query,
-            }
-        );
-
+        await this.ragService.clearContext(chatId);
         this.emitEvent(chatId, "final_answer", { answer: finalAnswer });
         console.log(
             `🎉 [ORCHESTRATOR] Query processing completed successfully`
         );
 
-        const primaryStrategy = subTasks[0]?.strategy ?? {
-            name: "chain_of_thought",
-            parameters: {},
-        };
-        return { response: finalAnswer, selectedStrategy: primaryStrategy };
+        return { response: finalAnswer };
     }
 
     private async selectReasoningStrategy(
