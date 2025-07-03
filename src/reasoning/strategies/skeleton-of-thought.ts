@@ -1,0 +1,40 @@
+import { BaseReasoningStrategy } from "./base-strategy";
+import { ReasoningResult } from "../types";
+import { ResponseParser } from "../parsers";
+
+export class SkeletonOfThoughtStrategy extends BaseReasoningStrategy {
+    async execute(query: string, context: string): Promise<ReasoningResult> {
+        const analysisPrompt = `Categorize this question's information type and identify main components.
+
+Question: "${query}"
+${context ? `Context: ${context}` : ""}
+
+Information type and main components:`;
+
+        const analysisResponse = await this.queryLLM(analysisPrompt, 0.1);
+
+        const categoriesPrompt = `Break down into factual categories based on this analysis.
+
+Analysis: ${analysisResponse.content}
+
+List clear, distinct fact categories:`;
+
+        const categoriesResponse = await this.queryLLM(categoriesPrompt, 0.1);
+
+        const structuredPrompt = `Provide an organized answer addressing each category.
+
+Question: "${query}"
+Fact categories: ${categoriesResponse.content}
+
+Structured answer addressing each category:`;
+
+        const structuredResponse = await this.queryLLM(structuredPrompt, 0.3);
+
+        return {
+            result: ResponseParser.filterThinkBlocks(
+                structuredResponse.content
+            ),
+            confidence: Math.min(0.85, structuredResponse.confidence),
+        };
+    }
+}
