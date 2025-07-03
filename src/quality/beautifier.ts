@@ -19,6 +19,7 @@ Make it:
 - Professional but friendly
 - Keep all facts exactly as they are
 - Remove awkward or robotic phrasing
+- Avoid unnecessary symbols or formatting
 
 Improved answer:`;
 

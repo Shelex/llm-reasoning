@@ -186,36 +186,13 @@ export class OrchestratorService extends EventEmitter {
 
         // Check if confidence is below retry threshold
         if (confidence < this.retryConfidenceThreshold) {
-            console.log(
-                `🔄 [ORCHESTRATOR] Confidence ${confidence} below threshold ${this.retryConfidenceThreshold} for subtask ${subTask.id}, attempting retry`
-            );
-            const retryResult = await this.retrySubTask(
+            return await this.retrySubTaskOneMoreTime({
                 chatId,
                 subTask,
                 result,
                 confidence,
-                contextSummary
-            );
-            if (retryResult) {
-                console.log(
-                    `✅ [ORCHESTRATOR] Retry successful for subtask ${subTask.id}, new confidence: ${retryResult.confidence}`
-                );
-                subTask.result = retryResult.result;
-                subTask.confidence = retryResult.confidence;
-
-                await this.ragService.addContext(
-                    chatId,
-                    `Retry result: ${retryResult.result}`,
-                    {
-                        type: "retry_result",
-                        subTaskId: subTask.id,
-                        confidence: retryResult.confidence,
-                        originalConfidence: confidence,
-                    }
-                );
-
-                return retryResult.result;
-            }
+                contextSummary,
+            });
         }
 
         if (confidence < this.confidenceThreshold) {
@@ -238,6 +215,66 @@ export class OrchestratorService extends EventEmitter {
         }
 
         return result;
+    }
+
+    private async retrySubTaskOneMoreTime(options: {
+        chatId: string;
+        subTask: SubTask;
+        result: string;
+        confidence: number;
+        contextSummary: string;
+        attempt?: number;
+    }): Promise<string> {
+        const attempt = options.attempt ?? 1;
+        const maxAttempts = 3;
+
+        const retryResult = await this.retrySubTask(
+            options.chatId,
+            options.subTask,
+            options.result,
+            options.confidence,
+            options.contextSummary
+        );
+
+        if (
+            !retryResult ||
+            retryResult.confidence < this.retryConfidenceThreshold
+        ) {
+            console.log(
+                `❌ [ORCHESTRATOR] Retry failed for subtask ${options.subTask.id}, keeping original result`
+            );
+
+            if (attempt >= maxAttempts) {
+                console.warn(
+                    `⚠️ [ORCHESTRATOR] Maximum retry attempts reached for subtask ${options.subTask.id}`
+                );
+                return retryResult?.result ?? "";
+            }
+
+            return this.retrySubTaskOneMoreTime({
+                ...options,
+                attempt: attempt + 1,
+            });
+        }
+
+        console.log(
+            `✅ [ORCHESTRATOR] Retry successful for subtask ${options.subTask.id}, new confidence: ${retryResult.confidence}`
+        );
+        options.subTask.result = retryResult.result;
+        options.subTask.confidence = retryResult.confidence;
+
+        await this.ragService.addContext(
+            options.chatId,
+            `Retry result: ${retryResult.result}`,
+            {
+                type: "retry_result",
+                subTaskId: options.subTask.id,
+                confidence: retryResult.confidence,
+                originalConfidence: options.confidence,
+            }
+        );
+
+        return retryResult.result;
     }
 
     private async synthesizeAndBeautifyAnswer(

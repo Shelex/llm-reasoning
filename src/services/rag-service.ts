@@ -110,7 +110,7 @@ export class RAGService {
     async getRelevantContext(
         chatId: string,
         query: string,
-        topK: number = 3
+        topK: number = 10
     ): Promise<RAGContext[]> {
         this.ensureInitialized();
 
