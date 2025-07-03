@@ -1,4 +1,4 @@
-# SLM Reasoning Backend
+# Local LLM reasoning to make it reason
 
 **TL;DR**: Backend for opinionatedly enhanced local llm that thinks so hard it might immediately regret it.
 
