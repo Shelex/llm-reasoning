@@ -118,7 +118,7 @@ Huang, X., et al. (2020). Model size matters: An empirical study on the impact o
 ```bash
 # clone the repo
 # open the new folder
-cd slm-reasoning
+cd llm-reason-to-reason
 # Install dependencies (and half of the internet ofc)
 npm install
 # Copy the env file
@@ -212,6 +212,7 @@ NODE_ENV=development                 # development (if you expect to run THIS in
 
 ## License 📄
 
+```
 GLWTS(Good Luck With That Stuff) Public License
 Copyright (c) Every-fucking-one, except the Author
 
@@ -238,3 +239,4 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 Good luck and Godspeed.
+```
