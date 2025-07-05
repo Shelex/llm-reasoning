@@ -4,7 +4,6 @@ import { ResponseFilter } from "../utils/response-filter";
 export class KeyPointExtractor {
     private readonly llmClient: LMStudioClient;
     private readonly cache = new Map<string, string>();
-    private readonly maxCacheSize = 100;
 
     constructor(llmClient: LMStudioClient) {
         this.llmClient = llmClient;
@@ -12,103 +11,127 @@ export class KeyPointExtractor {
 
     async extractKeyPoints(
         text: string,
-        maxLength: number = 600
+        chatId: string,
+        attempt = 1
     ): Promise<string> {
-        if (text.length <= maxLength) return text;
-
-        const cacheKey = `${text.substring(0, 300)}:${maxLength}`;
-        if (this.cache.has(cacheKey)) {
-            return this.cache.get(cacheKey)!;
-        }
-
         try {
-            const extractedPoints = await this.extractWithLLM(text, maxLength);
-            this.updateCache(cacheKey, extractedPoints);
+            const extractedPoints = await this.extractWithLLM(text, chatId);
+            this.updateCache(chatId, extractedPoints);
             return extractedPoints;
         } catch (error) {
             console.warn(
                 "LLM key point extraction failed, using fallback:",
                 error
             );
-            return this.fallbackExtraction(text, maxLength);
+            if (attempt <= 3) {
+                console.log(
+                    `Retrying key point extraction (attempt ${attempt + 1})...`
+                );
+                return this.extractKeyPoints(text, chatId, attempt + 1);
+            }
+
+            console.error("Max attempts reached, returning empty result.");
+            return "";
+        }
+    }
+
+    async mergeAndCompactContext(
+        existingContext: string,
+        newContent: string,
+        chatId: string,
+        attempt = 1
+    ): Promise<string> {
+        try {
+            const compactedContent = await this.mergeAndCompactWithLLM(
+                existingContext,
+                newContent,
+                chatId
+            );
+            this.updateCache(chatId, compactedContent);
+            return compactedContent;
+        } catch (error) {
+            console.warn("LLM context merging failed, using fallback:", error);
+            if (attempt <= 3) {
+                console.log(
+                    `Retrying context merging (attempt ${attempt + 1})...`
+                );
+                return this.mergeAndCompactContext(
+                    existingContext,
+                    newContent,
+                    chatId,
+                    attempt + 1
+                );
+            }
+            console.error("Max attempts reached, returning existing context.");
+            return existingContext;
         }
     }
 
     private async extractWithLLM(
         text: string,
-        maxLength: number
+        chatId: string
     ): Promise<string> {
-        const prompt = `Extract the most important key points from this text. Focus on facts, conclusions, and essential information.
-
+        const prompt = `Extract the most important key points from this text.
 Text: "${text}"
-
 Requirements:
 - Extract only the most critical information
-- Keep response under ${maxLength} characters
+- Keep response very short
 - Prioritize facts, numbers, names, and conclusions
 - Maintain factual accuracy
 - Use concise language
-
+- Avoid unnecessary details or explanations
+- Do not include any reasoning or explanations
+- Do not use bullet points or lists
+- Do not include any introductory phrases
 Key points:`;
 
-        const response = await this.llmClient.queryLLM(prompt, 0.1);
+        const response = await this.llmClient.queryLLM(
+            prompt,
+            0.1,
+            chatId,
+            "extract_key_points"
+        );
         const extracted = ResponseFilter.filterThinkBlocks(response.content);
 
-        // Ensure we don't exceed max length
-        return extracted.length <= maxLength
-            ? extracted
-            : extracted.substring(0, maxLength);
+        return extracted;
     }
 
-    private fallbackExtraction(text: string, maxLength: number): string {
-        const sentences = text
-            .split(/[.!?]+/)
-            .filter((s) => s.trim().length > 5);
+    private async mergeAndCompactWithLLM(
+        existingContext: string,
+        newContent: string,
+        chatId: string
+    ): Promise<string> {
+        const prompt = `Merge and compact this information into a single, concise context.
 
-        // Prioritize sentences with key information indicators
-        const keywordSentences = sentences.filter((sentence) => {
-            const s = sentence.toLowerCase();
-            return (
-                s.includes("currency") ||
-                s.includes("capital") ||
-                s.includes("official") ||
-                s.includes("result") ||
-                s.includes("answer") ||
-                s.includes("conclusion") ||
-                s.includes("because") ||
-                s.includes("therefore") ||
-                s.includes("is") ||
-                s.includes("are") ||
-                s.includes("population") ||
-                s.includes("located") ||
-                s.includes("founded") ||
-                s.includes("established")
-            );
-        });
+Existing context: "${existingContext}"
+New content: "${newContent}"
 
-        let result = "";
-        const sentencesToUse =
-            keywordSentences.length > 0 ? keywordSentences : sentences;
+Requirements:
+- Merge both pieces of information intelligently
+- Remove redundant information
+- Remove duplicate facts
+- Prioritize the most important facts and insights
+- Maintain factual accuracy
+- Use concise language
+- Do not include any reasoning or explanations
+- Do not use bullet points or lists
+- Do not include any introductory phrases
+- Keep the result context under 500 characters
 
-        for (const sentence of sentencesToUse) {
-            const cleanSentence = sentence.trim();
-            if (result.length + cleanSentence.length + 2 <= maxLength) {
-                result += (result ? ". " : "") + cleanSentence;
-            } else {
-                break;
-            }
-        }
+Merged and compacted context:`;
 
-        return result || text.substring(0, maxLength);
+        const response = await this.llmClient.queryLLM(
+            prompt,
+            0.1,
+            chatId,
+            "merge_compact_context"
+        );
+        const merged = ResponseFilter.filterThinkBlocks(response.content);
+
+        return merged;
     }
 
     private updateCache(key: string, value: string): void {
-        if (this.cache.size >= this.maxCacheSize) {
-            const firstKey = this.cache.keys().next().value;
-            if (firstKey) {
-                this.cache.delete(firstKey);
-            }
-        }
         this.cache.set(key, value);
     }
 

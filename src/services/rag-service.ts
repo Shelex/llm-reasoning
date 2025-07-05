@@ -10,12 +10,11 @@ export class RAGService {
     private vectorStore!: MemoryVectorStore;
     private readonly embeddings: LocalEmbeddings;
     private readonly textSplitter: RecursiveCharacterTextSplitter;
-    private readonly contexts: Map<string, RAGContext[]> = new Map();
+    private readonly contexts: Map<string, RAGContext> = new Map();
     private initialized = false;
-    private readonly maxContextsPerChat = 20;
     private readonly maxContextAge = 30 * 60 * 1000; // 30m
     private cleanupInterval?: NodeJS.Timeout;
-    private readonly keyPointExtractor?: KeyPointExtractor;
+    private readonly keyPointExtractor: KeyPointExtractor;
 
     constructor(private readonly llmClient: LMStudioClient) {
         this.embeddings = new LocalEmbeddings();
@@ -48,7 +47,7 @@ export class RAGService {
             this.cleanupInterval = undefined;
         }
         this.contexts.clear();
-        this.keyPointExtractor?.clearCache();
+        this.keyPointExtractor.clearCache();
         this.initialized = false;
     }
 
@@ -68,34 +67,88 @@ export class RAGService {
         metadata: Record<string, unknown> = {}
     ): Promise<void> {
         this.ensureInitialized();
+        console.log(
+            `📝 [RAG] Adding context for chat ${chatId}: ${content.substring(
+                0,
+                100
+            )}...`
+        );
 
         this.cleanOldContexts(chatId);
 
+        const existingContext = this.contexts.get(chatId);
+        let processedContent: string;
+
+        if (existingContext) {
+            console.log(
+                `🔄 [RAG] Merging new content with existing context for chat ${chatId}`
+            );
+            processedContent =
+                await this.keyPointExtractor.mergeAndCompactContext(
+                    existingContext.content,
+                    content,
+                    chatId
+                );
+        } else {
+            console.log(
+                `🆕 [RAG] Extracting key points for new chat ${chatId}`
+            );
+            processedContent = await this.keyPointExtractor.extractKeyPoints(
+                content,
+                chatId
+            );
+        }
+
         const context: RAGContext = {
             id: `${chatId}-${Date.now()}`,
-            content: this.compressContentForStorage(content),
-            metadata,
+            content: processedContent,
+            metadata: {
+                ...metadata,
+                originalLength: content.length,
+                compressedLength: processedContent.length,
+                compressionRatio:
+                    content.length > 0
+                        ? processedContent.length / content.length
+                        : 0,
+            },
             timestamp: new Date(),
         };
 
-        if (!this.contexts.has(chatId)) {
-            this.contexts.set(chatId, []);
+        this.contexts.set(chatId, context);
+
+        await this.updateVectorStore(chatId, context);
+
+        console.log(
+            `✅ [RAG] Context updated for chat ${chatId} (${content.length} → ${processedContent.length} chars)`
+        );
+    }
+
+    private async updateVectorStore(
+        chatId: string,
+        context: RAGContext
+    ): Promise<void> {
+        await this.initializeVectorStore();
+
+        for (const [id, ctx] of this.contexts.entries()) {
+            if (id !== chatId) {
+                await this.addContextToVectorStore(id, ctx);
+            }
         }
 
-        const chatContexts = this.contexts.get(chatId)!;
-        chatContexts.push(context);
+        await this.addContextToVectorStore(chatId, context);
+    }
 
-        if (chatContexts.length > this.maxContextsPerChat) {
-            chatContexts.shift();
-        }
-
+    private async addContextToVectorStore(
+        chatId: string,
+        context: RAGContext
+    ): Promise<void> {
         const chunks = await this.textSplitter.splitText(context.content);
         const documents = chunks.map(
             (chunk, index) =>
                 new Document({
                     pageContent: chunk,
                     metadata: {
-                        ...metadata,
+                        ...context.metadata,
                         chatId,
                         contextId: context.id,
                         chunkIndex: index,
@@ -113,144 +166,94 @@ export class RAGService {
         topK: number = 10
     ): Promise<RAGContext[]> {
         this.ensureInitialized();
-
-        const results = await this.vectorStore.similaritySearch(
-            query,
-            topK * 2
+        console.log(
+            `🔍 [RAG] Getting relevant context for chat ${chatId}, query: ${query.substring(
+                0,
+                50
+            )}...`
         );
 
-        const contextIds = new Set<string>();
-        const relevantContexts: RAGContext[] = [];
-
-        for (const doc of results) {
-            if (
-                doc.metadata.chatId === chatId &&
-                !contextIds.has(doc.metadata.contextId)
-            ) {
-                const contexts = this.contexts.get(chatId) || [];
-                const context = contexts.find(
-                    (ctx) => ctx.id === doc.metadata.contextId
-                );
-
-                if (context && relevantContexts.length < topK) {
-                    contextIds.add(doc.metadata.contextId);
-                    const compressedContext =
-                        await this.compressContextForRetrieval(context);
-                    relevantContexts.push(compressedContext);
-                }
-            }
+        const context = this.contexts.get(chatId);
+        if (!context) {
+            console.log(`❌ [RAG] No context found for chat ${chatId}`);
+            return [];
         }
 
-        return relevantContexts;
-    }
+        // Since we now have a single compacted context per chat, we can return it directly
+        // or perform similarity search if we want to return relevant chunks
+        const results = await this.vectorStore.similaritySearch(query, topK);
 
-    private async compressContextForRetrieval(
-        context: RAGContext
-    ): Promise<RAGContext> {
-        const compressedContent = await this.extractKeyPoints(
-            context.content,
-            150
+        const relevantChunks = results.filter(
+            (doc) => doc.metadata.chatId === chatId
         );
-        return {
-            ...context,
-            content: compressedContent,
-        };
-    }
 
-    private compressContentForStorage(content: string): string {
-        return content
-            .replace(/\s+/g, " ")
-            .replace(/\n\s*\n/g, "\n")
-            .trim();
-    }
+        if (relevantChunks.length > 0) {
+            console.log(
+                `✅ [RAG] Retrieved pre-processed context for chat ${chatId} (${relevantChunks.length} chunks)`
+            );
+            return [context];
+        }
 
-    private async extractKeyPoints(
-        text: string,
-        maxLength: number = 500
-    ): Promise<string> {
-        return this.keyPointExtractor?.extractKeyPoints(text, maxLength) ?? "";
+        console.log(`❌ [RAG] No relevant context found for chat ${chatId}`);
+        return [];
     }
 
     private cleanOldContexts(chatId: string): void {
-        const contexts = this.contexts.get(chatId);
-        if (!contexts) return;
+        const context = this.contexts.get(chatId);
+        if (!context) return;
 
         const now = Date.now();
-        const filteredContexts = contexts.filter(
-            (ctx) => now - ctx.timestamp.getTime() < this.maxContextAge
-        );
-
-        if (filteredContexts.length !== contexts.length) {
-            this.contexts.set(chatId, filteredContexts);
+        if (now - context.timestamp.getTime() >= this.maxContextAge) {
+            this.contexts.delete(chatId);
+            console.log(`🧹 [RAG] Removed expired context for chat ${chatId}`);
         }
     }
 
     async getAllContext(chatId: string): Promise<RAGContext[]> {
         this.ensureInitialized();
-        return this.contexts.get(chatId) || [];
+        const context = this.contexts.get(chatId);
+        return context ? [context] : [];
     }
 
     async clearContext(chatId: string): Promise<void> {
         this.ensureInitialized();
+        console.log(`🧹 [RAG] Clearing context for chat ${chatId}`);
 
         this.contexts.delete(chatId);
 
         await this.initializeVectorStore();
 
-        for (const [id, contexts] of this.contexts.entries()) {
-            for (const context of contexts) {
-                const chunks = await this.textSplitter.splitText(
-                    context.content
-                );
-                const documents = chunks.map(
-                    (chunk, index) =>
-                        new Document({
-                            pageContent: chunk,
-                            metadata: {
-                                ...context.metadata,
-                                chatId: id,
-                                contextId: context.id,
-                                chunkIndex: index,
-                                timestamp: context.timestamp.toISOString(),
-                            },
-                        })
-                );
-                await this.vectorStore.addDocuments(documents);
-            }
+        for (const [id, context] of this.contexts.entries()) {
+            await this.addContextToVectorStore(id, context);
         }
     }
 
     async summarizeContext(chatId: string): Promise<string> {
         this.ensureInitialized();
 
-        const contexts = this.contexts.get(chatId) || [];
-        if (contexts.length === 0) return "";
+        const context = this.contexts.get(chatId);
+        if (!context) return "";
 
-        const recentContexts = contexts
-            .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-            .slice(0, 5);
-
-        const compressedContexts = await Promise.all(
-            recentContexts.map((ctx) => this.extractKeyPoints(ctx.content, 100))
-        );
-
-        return compressedContexts.join(" | ");
+        return context.content;
     }
 
     cleanupOldContexts(): void {
         this.ensureInitialized();
 
         const now = Date.now();
-        for (const [chatId, contexts] of this.contexts.entries()) {
-            const filteredContexts = contexts.filter(
-                (ctx) => now - ctx.timestamp.getTime() < this.maxContextAge
-            );
+        const expiredChats: string[] = [];
 
-            if (filteredContexts.length === 0) {
-                this.contexts.delete(chatId);
-            } else if (filteredContexts.length !== contexts.length) {
-                this.contexts.set(chatId, filteredContexts);
+        for (const [chatId, context] of this.contexts.entries()) {
+            if (now - context.timestamp.getTime() >= this.maxContextAge) {
+                expiredChats.push(chatId);
             }
+        }
+
+        for (const chatId of expiredChats) {
+            this.contexts.delete(chatId);
+            console.log(
+                `🧹 [RAG] Cleaned up expired context for chat ${chatId}`
+            );
         }
     }
 
@@ -258,15 +261,33 @@ export class RAGService {
         totalChats: number;
         totalContexts: number;
         avgContextsPerChat: number;
+        totalCompressedChars: number;
+        avgCompressionRatio: number;
     } {
         const totalChats = this.contexts.size;
-        const totalContexts = Array.from(this.contexts.values()).reduce(
-            (sum, contexts) => sum + contexts.length,
-            0
-        );
-        const avgContextsPerChat =
-            totalChats > 0 ? totalContexts / totalChats : 0;
+        const totalContexts = totalChats;
+        const avgContextsPerChat = totalChats > 0 ? 1 : 0;
 
-        return { totalChats, totalContexts, avgContextsPerChat };
+        let totalCompressedChars = 0;
+        let totalCompressionRatio = 0;
+
+        for (const context of this.contexts.values()) {
+            totalCompressedChars += context.content.length;
+            if (context.metadata.compressionRatio) {
+                totalCompressionRatio += context.metadata
+                    .compressionRatio as number;
+            }
+        }
+
+        const avgCompressionRatio =
+            totalChats > 0 ? totalCompressionRatio / totalChats : 0;
+
+        return {
+            totalChats,
+            totalContexts,
+            avgContextsPerChat,
+            totalCompressedChars,
+            avgCompressionRatio,
+        };
     }
 }

@@ -185,7 +185,6 @@ export class OrchestratorService extends EventEmitter {
             confidence: confidence,
         });
 
-        // Check if confidence is below retry threshold
         if (confidence < this.retryConfidenceThreshold) {
             return await this.retrySubTaskOneMoreTime({
                 chatId,
