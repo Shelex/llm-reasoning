@@ -23,7 +23,6 @@ Respond with only a number (e.g., 0.85)`;
             const response = await this.llmClient.queryLLMRaw(
                 confidencePrompt,
                 0.05,
-                10
             );
             const confidenceText =
                 response.data.choices[0]?.message?.content || "";

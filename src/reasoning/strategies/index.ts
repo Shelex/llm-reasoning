@@ -13,7 +13,7 @@ import { ConstrainedChainOfThoughtStrategy } from "./constrained-chain-of-though
 import { GraphOfThoughtsStrategy } from "./graph-of-thoughts";
 
 export class StrategyFactory {
-    private strategies: Map<string, ReasoningExecutor>;
+    private readonly strategies: Map<string, ReasoningExecutor>;
 
     constructor(llmClient: LMStudioClient) {
         this.strategies = new Map([

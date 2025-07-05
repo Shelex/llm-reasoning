@@ -7,6 +7,6 @@ export interface ReasoningExecutor {
     execute(
         query: string,
         context: string,
-        temperature: number
+        chatId?: string
     ): Promise<ReasoningResult>;
 }
