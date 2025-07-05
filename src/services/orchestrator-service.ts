@@ -6,10 +6,10 @@ import { PromptBuilder, ResponseParser, StrategyFactory } from "../reasoning";
 import { AnswerBeautifier } from "../quality";
 
 export class OrchestratorService extends EventEmitter {
-    private llmClient: LMStudioClient;
-    private ragService: RAGService;
-    private strategyFactory: StrategyFactory;
-    private answerBeautifier: AnswerBeautifier;
+    private readonly llmClient: LMStudioClient;
+    private readonly ragService: RAGService;
+    private readonly strategyFactory: StrategyFactory;
+    private readonly answerBeautifier: AnswerBeautifier;
     private readonly confidenceThreshold: number = 0.6;
     private readonly retryConfidenceThreshold: number = 0.8;
 
@@ -33,7 +33,7 @@ export class OrchestratorService extends EventEmitter {
         this.emitEvent(chatId, "thinking", { stage: "decomposition", query });
 
         console.log(`🔍 [ORCHESTRATOR] Stage 1: Decomposing query`);
-        const decomposition = await this.decomposeQuery(query);
+        const decomposition = await this.decomposeQuery(query, chatId);
         console.log(
             `✅ [ORCHESTRATOR] Query decomposed into ${decomposition.subTasks.length} subtasks`
         );
@@ -60,7 +60,8 @@ export class OrchestratorService extends EventEmitter {
 
             const selectedStrategy = await this.selectReasoningStrategy(
                 subTask.query,
-                0.7
+                0.7,
+                chatId
             );
             subTask.strategy = selectedStrategy;
             console.log(
@@ -113,21 +114,33 @@ export class OrchestratorService extends EventEmitter {
 
     private async selectReasoningStrategy(
         query: string,
-        temperature: number
+        temperature: number,
+        chatId?: string
     ): Promise<ReasoningStrategy> {
         console.log(`🤔 [ORCHESTRATOR] Selecting reasoning strategy for query`);
         const prompt = PromptBuilder.buildStrategySelection(query);
-        const response = await this.llmClient.queryLLM(prompt, temperature);
+        const response = await this.llmClient.queryLLM(
+            prompt,
+            temperature,
+            chatId,
+            "strategy_selection"
+        );
 
         return ResponseParser.parseStrategySelection(response.content);
     }
 
     private async decomposeQuery(
-        query: string
+        query: string,
+        chatId?: string
     ): Promise<{ subTasks: SubTask[] }> {
         console.log(`🔨 [ORCHESTRATOR] Decomposing query into subtasks`);
         const prompt = PromptBuilder.buildDecomposition(query);
-        const response = await this.llmClient.queryLLM(prompt, 0.7);
+        const response = await this.llmClient.queryLLM(
+            prompt,
+            0.7,
+            chatId,
+            "decomposition"
+        );
 
         return ResponseParser.parseDecomposition(response.content);
     }
@@ -156,7 +169,7 @@ export class OrchestratorService extends EventEmitter {
         const { result, confidence } = await executor.execute(
             subTask.query,
             contextSummary,
-            0.2
+            chatId
         );
         console.log(
             `📊 [ORCHESTRATOR] Subtask ${subTask.id} completed with confidence: ${confidence}`
@@ -282,7 +295,8 @@ export class OrchestratorService extends EventEmitter {
         this.emitEvent(chatId, "thinking", { stage: "beautifying" });
         const beautifiedAnswer = await this.answerBeautifier.beautifyAnswer(
             originalQuery,
-            rawAnswer
+            rawAnswer,
+            chatId
         );
         console.log(`🎨 [ORCHESTRATOR] Answer beautification completed`);
 
@@ -314,7 +328,12 @@ export class OrchestratorService extends EventEmitter {
             subTaskResults,
             compactContext
         );
-        const response = await this.llmClient.queryLLM(prompt, 0.2);
+        const response = await this.llmClient.queryLLM(
+            prompt,
+            0.2,
+            chatId,
+            "final_synthesis"
+        );
 
         return ResponseParser.filterThinkBlocks(response.content);
     }
@@ -357,7 +376,9 @@ export class OrchestratorService extends EventEmitter {
 
             const retryResponse = await this.llmClient.queryLLM(
                 retryPrompt,
-                0.1
+                0.1,
+                chatId,
+                "retry"
             );
 
             const retryResult = {

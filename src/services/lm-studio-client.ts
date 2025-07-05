@@ -3,11 +3,13 @@ import { LLMResponse } from "../types";
 import { ResponseFilter } from "../utils/response-filter";
 import { ConfidenceCalculator } from "../llm/confidence-calculator";
 import { LLMPromptBuilder } from "../llm/prompt-builder";
+import { ChatLogger } from "../logging/chat-logger";
 
 export class LMStudioClient {
     private readonly client: AxiosInstance;
     private readonly baseUrl: string;
     private readonly confidenceCalculator: ConfidenceCalculator;
+    private readonly chatLogger: ChatLogger;
 
     constructor(baseUrl: string = "http://localhost:1234") {
         this.baseUrl = baseUrl;
@@ -19,31 +21,38 @@ export class LMStudioClient {
             },
         });
         this.confidenceCalculator = new ConfidenceCalculator(this);
+        this.chatLogger = new ChatLogger();
     }
 
     async queryLLMWithConfidence(
         prompt: string,
         temperature: number = 0.2,
-        maxTokens: number = 1000
+        chatId?: string,
+        stage?: string
     ): Promise<LLMResponse> {
         const confidencePrompt = LLMPromptBuilder.buildConfidencePrompt(prompt);
-        return this.queryLLMInternal(confidencePrompt, temperature, maxTokens);
+        return this.queryLLMInternal(
+            confidencePrompt,
+            temperature,
+            chatId,
+            stage
+        );
     }
 
     async queryLLM(
         prompt: string,
         temperature: number = 0.2,
-        maxTokens: number = 1000
+        chatId?: string,
+        stage?: string
     ): Promise<LLMResponse> {
-        return this.queryLLMInternal(prompt, temperature, maxTokens);
+        return this.queryLLMInternal(prompt, temperature, chatId, stage);
     }
 
-    async queryLLMRaw(prompt: string, temperature: number, maxTokens: number) {
+    async queryLLMRaw(prompt: string, temperature: number) {
         return this.client.post("/v1/chat/completions", {
             model: "local-model",
             messages: [{ role: "user", content: prompt }],
             temperature,
-            max_tokens: maxTokens,
             stream: false,
         });
     }
@@ -51,7 +60,8 @@ export class LMStudioClient {
     private async queryLLMInternal(
         prompt: string,
         temperature: number = 0.2,
-        maxTokens: number = 1000
+        chatId?: string,
+        stage?: string
     ): Promise<LLMResponse> {
         try {
             const response = await this.client.post("/v1/chat/completions", {
@@ -63,7 +73,6 @@ export class LMStudioClient {
                     },
                 ],
                 temperature,
-                max_tokens: maxTokens,
                 stream: false,
             });
 
@@ -72,7 +81,8 @@ export class LMStudioClient {
             const confidence = await this.confidenceCalculator.calculateWithLLM(
                 content
             );
-            return {
+
+            const llmResponse: LLMResponse = {
                 content: ResponseFilter.filterThinkBlocks(content),
                 confidence,
                 metadata: {
@@ -80,6 +90,19 @@ export class LMStudioClient {
                     usage: response.data.usage,
                 },
             };
+
+            if (chatId) {
+                await this.chatLogger.logChatInteraction({
+                    timestamp: new Date(),
+                    chatId,
+                    prompt,
+                    temperature,
+                    response: llmResponse,
+                    stage,
+                });
+            }
+
+            return llmResponse;
         } catch (error) {
             console.error("LM Studio API error:", error);
             throw new Error(`Failed to query LLM: ${error}`);

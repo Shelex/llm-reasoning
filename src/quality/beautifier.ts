@@ -6,7 +6,8 @@ export class AnswerBeautifier {
 
     async beautifyAnswer(
         originalQuery: string,
-        rawAnswer: string
+        rawAnswer: string,
+        chatId?: string
     ): Promise<string> {
         const beautifyPrompt = `Transform this answer into natural, conversational language while keeping all facts accurate.
 
@@ -23,7 +24,12 @@ Make it:
 
 Improved answer:`;
 
-        const response = await this.llmClient.queryLLM(beautifyPrompt, 0.4);
+        const response = await this.llmClient.queryLLM(
+            beautifyPrompt,
+            0.4,
+            chatId,
+            "beautify"
+        );
         return ResponseFilter.filterThinkBlocks(response.content);
     }
 }
