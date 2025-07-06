@@ -1,6 +1,12 @@
 import { LMStudioClient } from "./lm-studio-client";
 import { RAGService } from "./rag-service";
-import { SubTask, ReasoningStrategy, ChatEvent } from "../types";
+import { QueryClassifier } from "./query-classifier";
+import {
+    SubTask,
+    ReasoningStrategy,
+    ChatEvent,
+    QueryClassification,
+} from "../types";
 import { EventEmitter } from "events";
 import { PromptBuilder, ResponseParser, StrategyFactory } from "../reasoning";
 import { AnswerBeautifier } from "../quality";
@@ -8,6 +14,7 @@ import { AnswerBeautifier } from "../quality";
 export class OrchestratorService extends EventEmitter {
     private readonly llmClient: LMStudioClient;
     private readonly ragService: RAGService;
+    private readonly queryClassifier: QueryClassifier;
     private readonly strategyFactory: StrategyFactory;
     private readonly answerBeautifier: AnswerBeautifier;
     private readonly confidenceThreshold: number = 0.6;
@@ -17,6 +24,7 @@ export class OrchestratorService extends EventEmitter {
         super();
         this.llmClient = llmClient;
         this.ragService = ragService;
+        this.queryClassifier = new QueryClassifier(llmClient);
         this.strategyFactory = new StrategyFactory(llmClient);
         this.answerBeautifier = new AnswerBeautifier(llmClient);
     }
@@ -26,14 +34,63 @@ export class OrchestratorService extends EventEmitter {
         query: string
     ): Promise<{ response: string }> {
         console.log(
-            `🚀 [ORCHESTRATOR] Starting query processing for chatId: ${chatId}`
+            `[ORCHESTRATOR] Starting query processing for chatId: ${chatId}`
         );
-        console.log(`📋 [ORCHESTRATOR] Query: ${query}`);
+        console.log(`[ORCHESTRATOR] Query: ${query}`);
 
-        this.emitEvent(chatId, "thinking", { stage: "decomposition", query });
+        this.emitEvent(chatId, "thinking", { stage: "classification", query });
+        console.log(`[ORCHESTRATOR] Stage 0: Classifying and refining query`);
 
-        console.log(`🔍 [ORCHESTRATOR] Stage 1: Decomposing query`);
-        const decomposition = await this.decomposeQuery(query, chatId);
+        const classification =
+            await this.queryClassifier.classifyAndRefineQuery(query, chatId);
+        console.log(
+            `[ORCHESTRATOR] Query classified - Intent: ${classification.intent}, Complexity: ${classification.complexity}`
+        );
+
+        this.emitEvent(chatId, "classification", {
+            classification,
+            originalQuery: query,
+        });
+
+        await this.ragService.addContext(
+            chatId,
+            `Query classification: ${JSON.stringify(classification)}`,
+            "query_result",
+            classification.confidence,
+            {
+                originalQuery: query,
+                classification,
+            }
+        );
+
+        let queryToProcess = query;
+
+        if (
+            classification.refinedQuery &&
+            classification.refinedQuery !== query &&
+            classification.refinedQuery.trim().length > 3
+        ) {
+            queryToProcess = classification.refinedQuery;
+            console.log(
+                `[ORCHESTRATOR] Using refined query: "${queryToProcess}"`
+            );
+        } else {
+            console.log(
+                `[ORCHESTRATOR] Using original query: "${queryToProcess}"`
+            );
+        }
+
+        this.emitEvent(chatId, "thinking", {
+            stage: "decomposition",
+            query: queryToProcess,
+        });
+
+        console.log(`[ORCHESTRATOR] Stage 1: Decomposing refined query`);
+        const decomposition = await this.decomposeQuery(
+            queryToProcess,
+            chatId,
+            classification
+        );
         console.log(
             `✅ [ORCHESTRATOR] Query decomposed into ${decomposition.subTasks.length} subtasks`
         );
@@ -132,10 +189,15 @@ export class OrchestratorService extends EventEmitter {
 
     private async decomposeQuery(
         query: string,
-        chatId?: string
+        chatId?: string,
+        classification?: QueryClassification
     ): Promise<{ subTasks: SubTask[] }> {
-        console.log(`🔨 [ORCHESTRATOR] Decomposing query into subtasks`);
-        const prompt = PromptBuilder.buildDecomposition(query);
+        console.log(`[ORCHESTRATOR] Decomposing query into subtasks`);
+
+        const prompt = this.buildEnhancedDecompositionPrompt(
+            query,
+            classification
+        );
         const response = await this.llmClient.queryLLM(
             prompt,
             0.7,
@@ -146,14 +208,50 @@ export class OrchestratorService extends EventEmitter {
         return ResponseParser.parseDecomposition(response.content);
     }
 
+    private buildEnhancedDecompositionPrompt(
+        query: string,
+        classification?: QueryClassification
+    ): string {
+        let prompt = PromptBuilder.buildDecomposition(query);
+
+        if (!classification) {
+            return prompt;
+        }
+
+        prompt += `\n\nAdditional Context:
+- Query Intent: ${classification.intent}
+- Query Complexity: ${classification.complexity}`;
+
+        if (classification.suggestedSubQuestions.length > 0) {
+            prompt += `\n- Suggested Sub-Questions:
+${classification.suggestedSubQuestions.map((q) => `  • ${q}`).join("\n")}
+
+Consider incorporating these suggested sub-questions into your decomposition.`;
+        }
+
+        return prompt;
+    }
+
     private async executeSubTask(
         chatId: string,
         subTask: SubTask,
         strategy: ReasoningStrategy
     ): Promise<string> {
         console.log(
-            `⚡ [ORCHESTRATOR] Executing subtask ${subTask.id} with strategy ${strategy.name}`
+            `[ORCHESTRATOR] Executing subtask ${subTask.id} with strategy ${strategy.name}`
         );
+
+        if (!subTask.query || subTask.query.trim().length < 3) {
+            console.error(
+                `[ORCHESTRATOR] Invalid subtask query: "${subTask.query}"`
+            );
+            throw new Error(
+                `Subtask ${subTask.id} has invalid query: "${subTask.query}"`
+            );
+        }
+
+        console.log(`[ORCHESTRATOR] Subtask query: "${subTask.query}"`);
+
         const context = await this.ragService.getRelevantContext(
             chatId,
             subTask.query

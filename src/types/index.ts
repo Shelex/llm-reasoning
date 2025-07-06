@@ -51,10 +51,20 @@ export interface QueryRequest {
 export interface ChatEvent {
     type:
         | "thinking"
+        | "classification"
         | "subtask_start"
         | "subtask_complete"
         | "validation"
         | "final_answer";
     data: Record<string, unknown>;
     timestamp: Date;
+}
+
+export interface QueryClassification {
+    refinedQuery: string;
+    intent: "fact" | "comparison" | "reasoning" | "clarification" | "instruction" | "other";
+    complexity: "simple" | "complex";
+    suggestedSubQuestions: string[];
+    originalQuery: string;
+    confidence: number;
 }
