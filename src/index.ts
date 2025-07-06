@@ -21,7 +21,9 @@ async function startServer(): Promise<void> {
         const llmClient = new LMStudioClient(process.env.LM_STUDIO_URL);
         const ragService = new RAGService(llmClient);
 
+        console.log("🔧 Initializing RAG service with embeddings...");
         await ragService.initialize();
+        console.log("✅ RAG service initialized successfully");
 
         const orchestratorService = new OrchestratorService(
             llmClient,
@@ -47,7 +49,7 @@ async function startServer(): Promise<void> {
                 }`
             );
             console.log(
-                `🧠 RAG service using in-memory vector store with LLM-based key point extraction`
+                `🧠 RAG service with LangChain embeddings and intelligent context management`
             );
             console.log(
                 `✨ Answer beautification enabled for natural, human-like responses`

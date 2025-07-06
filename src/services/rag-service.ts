@@ -1,163 +1,211 @@
-import { Document } from "langchain/document";
-import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { RAGContext } from "../types";
-import { LocalEmbeddings } from "./local-embeddings";
-import { KeyPointExtractor } from "../rag/key-point-extractor";
 import { LMStudioClient } from "./lm-studio-client";
+import { RAGContext } from "../types";
+import {
+    SemanticContextManager,
+    SemanticContext,
+    ContextFilter,
+    ContextRanking,
+} from "../rag/semantic";
+import { ContextRank } from "../rag/context-rank";
+import { Deduplicator } from "../rag/deduplicator";
+import { QueryProcessor, QueryProcessingResult } from "../rag/query";
+import { MemoryManager, MemoryStats } from "../rag/memory";
+import { EmbeddingsClient } from "../rag/embeddings";
+
+export interface RAGServiceConfig {
+    enableSemanticDeduplication: boolean;
+    enableAdvancedFiltering: boolean;
+    enableQueryEnhancement: boolean;
+    enableMemoryManagement: boolean;
+    enableLogging: boolean;
+    maxContextAge: number;
+    maxContextsPerChat: number;
+    confidenceThreshold: number;
+}
 
 export class RAGService {
-    private vectorStore!: MemoryVectorStore;
-    private readonly embeddings: LocalEmbeddings;
-    private readonly textSplitter: RecursiveCharacterTextSplitter;
-    private readonly contexts: Map<string, RAGContext> = new Map();
+    private readonly embeddingsClient: EmbeddingsClient;
+    private readonly contextManager: SemanticContextManager;
+    private readonly contextRank: ContextRank;
+    private readonly deduplicator: Deduplicator;
+    private readonly queryProcessor: QueryProcessor;
+    private readonly memoryManager: MemoryManager;
+    private readonly config: RAGServiceConfig;
+
     private initialized = false;
-    private readonly maxContextAge = 30 * 60 * 1000; // 30m
     private cleanupInterval?: NodeJS.Timeout;
-    private readonly keyPointExtractor: KeyPointExtractor;
 
-    constructor(private readonly llmClient: LMStudioClient) {
-        this.embeddings = new LocalEmbeddings();
+    constructor(llmClient: LMStudioClient, config?: Partial<RAGServiceConfig>) {
+        this.config = {
+            enableSemanticDeduplication: true,
+            enableAdvancedFiltering: true,
+            enableQueryEnhancement: true,
+            enableMemoryManagement: true,
+            enableLogging: true,
+            maxContextAge: 30 * 60 * 1000,
+            maxContextsPerChat: 15,
+            confidenceThreshold: 0.6,
+            ...config,
+        };
 
-        this.textSplitter = new RecursiveCharacterTextSplitter({
-            chunkSize: 300,
-            chunkOverlap: 50,
+        this.embeddingsClient = new EmbeddingsClient(llmClient);
+        this.contextManager = new SemanticContextManager(llmClient);
+        this.contextRank = new ContextRank(this.embeddingsClient);
+        this.deduplicator = new Deduplicator(this.embeddingsClient, llmClient);
+        this.queryProcessor = new QueryProcessor(
+            this.contextManager,
+            this.contextRank,
+            this.deduplicator,
+            llmClient
+        );
+        this.memoryManager = new MemoryManager({
+            maxContextsPerChat: this.config.maxContextsPerChat,
+            maxContextAgeDays:
+                this.config.maxContextAge / (24 * 60 * 60 * 1000),
+            cleanupIntervalMs: 10 * 60 * 1000,
         });
 
-        this.keyPointExtractor = new KeyPointExtractor(this.llmClient);
+        console.log(
+            "🚀 [RAG] Service initialized with advanced semantic capabilities"
+        );
     }
 
     async initialize(): Promise<void> {
         if (this.initialized) return;
 
-        await this.embeddings.initialize();
-        await this.initializeVectorStore();
+        try {
+            console.log("[RAG] Initializing service components...");
 
-        const cleanupInterval = this.maxContextAge / 2;
-        this.cleanupInterval = setInterval(() => {
-            this.cleanupOldContexts();
-        }, cleanupInterval);
+            console.log("[RAG] Checking embeddings service availability...");
+            const isEmbeddingsHealthy =
+                await this.embeddingsClient.healthCheck();
+            if (!isEmbeddingsHealthy) {
+                throw new Error(
+                    "Embeddings service is not available. Please start LM Studio with an embedding model loaded before starting the application."
+                );
+            }
 
-        this.initialized = true;
+            console.log("[RAG] Embeddings service is healthy and ready");
+
+            if (this.config.enableMemoryManagement) {
+                this.startCleanupProcess();
+            }
+
+            this.initialized = true;
+            console.log("✅ [RAG] Service initialization complete");
+        } catch (error) {
+            console.error("❌ [RAG] Initialization failed:", error);
+            throw new Error(`RAG service initialization failed: ${error}`);
+        }
     }
 
     async shutdown(): Promise<void> {
+        console.log("🛑 [RAG] Shutting down service...");
+
         if (this.cleanupInterval) {
             clearInterval(this.cleanupInterval);
             this.cleanupInterval = undefined;
         }
-        this.contexts.clear();
-        this.keyPointExtractor.clearCache();
+
+        this.memoryManager.shutdown();
+        this.embeddingsClient.clearCache();
+        this.deduplicator.clearCaches();
+
         this.initialized = false;
+        console.log("✅ [RAG] Service shutdown complete");
     }
 
-    private async initializeVectorStore(): Promise<void> {
-        this.vectorStore = new MemoryVectorStore(this.embeddings);
-    }
+    async processQuery(
+        query: string,
+        chatId: string,
+        customFilter?: ContextFilter,
+        customRanking?: ContextRanking
+    ): Promise<QueryProcessingResult> {
+        this.ensureInitialized();
 
-    private ensureInitialized(): void {
-        if (!this.initialized) {
-            throw new Error("RAGService is not initialized.");
+        console.log(
+            `🔍 [RAG] Processing query for chat ${chatId}: ${query.substring(
+                0,
+                100
+            )}...`
+        );
+
+        try {
+            const result = await this.queryProcessor.processQuery(
+                query,
+                chatId,
+                customFilter,
+                customRanking
+            );
+
+            if (this.config.enableLogging) {
+                console.log(
+                    `📊 [RAG] Query processed - Confidence: ${result.confidence.toFixed(
+                        3
+                    )}, Contexts: ${result.relevantContext.length}, Time: ${
+                        result.processingStats.processingTimeMs
+                    }ms`
+                );
+            }
+
+            return result;
+        } catch (error) {
+            console.error("❌ [RAG] Query processing failed:", error);
+
+            return {
+                enhancedQuery: query,
+                relevantContext: [],
+                contextSummary: "",
+                confidence: 0.5,
+                processingStats: {
+                    originalQueryLength: query.length,
+                    enhancedQueryLength: query.length,
+                    contextsRetrieved: 0,
+                    contextCompressionRatio: 0,
+                    processingTimeMs: 0,
+                },
+            };
         }
     }
 
     async addContext(
         chatId: string,
         content: string,
+        contextType: SemanticContext["contextType"] = "query_result",
+        confidence: number = 0.8,
         metadata: Record<string, unknown> = {}
     ): Promise<void> {
         this.ensureInitialized();
-        console.log(
-            `📝 [RAG] Adding context for chat ${chatId}: ${content.substring(
-                0,
-                100
-            )}...`
-        );
 
-        this.cleanOldContexts(chatId);
-
-        const existingContext = this.contexts.get(chatId);
-        let processedContent: string;
-
-        if (existingContext) {
+        try {
             console.log(
-                `🔄 [RAG] Merging new content with existing context for chat ${chatId}`
+                `📝 [RAG] Adding context for chat ${chatId}: ${content.substring(
+                    0,
+                    100
+                )}...`
             );
-            processedContent =
-                await this.keyPointExtractor.mergeAndCompactContext(
-                    existingContext.content,
-                    content,
-                    chatId
-                );
-        } else {
-            console.log(
-                `🆕 [RAG] Extracting key points for new chat ${chatId}`
-            );
-            processedContent = await this.keyPointExtractor.extractKeyPoints(
+
+            await this.contextManager.addContext(
+                chatId,
                 content,
-                chatId
+                contextType,
+                confidence,
+                {
+                    ...metadata,
+                    addedAt: new Date().toISOString(),
+                    serviceVersion: "production-v1",
+                }
             );
-        }
 
-        const context: RAGContext = {
-            id: `${chatId}-${Date.now()}`,
-            content: processedContent,
-            metadata: {
-                ...metadata,
-                originalLength: content.length,
-                compressedLength: processedContent.length,
-                compressionRatio:
-                    content.length > 0
-                        ? processedContent.length / content.length
-                        : 0,
-            },
-            timestamp: new Date(),
-        };
-
-        this.contexts.set(chatId, context);
-
-        await this.updateVectorStore(chatId, context);
-
-        console.log(
-            `✅ [RAG] Context updated for chat ${chatId} (${content.length} → ${processedContent.length} chars)`
-        );
-    }
-
-    private async updateVectorStore(
-        chatId: string,
-        context: RAGContext
-    ): Promise<void> {
-        await this.initializeVectorStore();
-
-        for (const [id, ctx] of this.contexts.entries()) {
-            if (id !== chatId) {
-                await this.addContextToVectorStore(id, ctx);
+            if (this.config.enableLogging) {
+                console.log(
+                    `✅ [RAG] Context added successfully for chat ${chatId}`
+                );
             }
+        } catch (error) {
+            console.error("❌ [RAG] Failed to add context:", error);
+            throw error;
         }
-
-        await this.addContextToVectorStore(chatId, context);
-    }
-
-    private async addContextToVectorStore(
-        chatId: string,
-        context: RAGContext
-    ): Promise<void> {
-        const chunks = await this.textSplitter.splitText(context.content);
-        const documents = chunks.map(
-            (chunk, index) =>
-                new Document({
-                    pageContent: chunk,
-                    metadata: {
-                        ...context.metadata,
-                        chatId,
-                        contextId: context.id,
-                        chunkIndex: index,
-                        timestamp: context.timestamp.toISOString(),
-                    },
-                })
-        );
-
-        await this.vectorStore.addDocuments(documents);
     }
 
     async getRelevantContext(
@@ -166,128 +214,313 @@ export class RAGService {
         topK: number = 10
     ): Promise<RAGContext[]> {
         this.ensureInitialized();
-        console.log(
-            `🔍 [RAG] Getting relevant context for chat ${chatId}, query: ${query.substring(
-                0,
-                50
-            )}...`
-        );
 
-        const context = this.contexts.get(chatId);
-        if (!context) {
-            console.log(`❌ [RAG] No context found for chat ${chatId}`);
+        try {
+            console.log(
+                `🔍 [RAG] Retrieving relevant context for chat ${chatId}`
+            );
+
+            const semanticContexts =
+                await this.contextManager.getRelevantContext(
+                    chatId,
+                    query,
+                    { minConfidence: this.config.confidenceThreshold },
+                    {},
+                    topK
+                );
+
+            const ragContexts: RAGContext[] = semanticContexts.map((ctx) => ({
+                id: ctx.id,
+                content: ctx.content,
+                metadata: {
+                    ...ctx.metadata,
+                    confidence: ctx.confidence,
+                    contextType: ctx.contextType,
+                    relevanceScore: ctx.relevanceScore,
+                    semanticHash: ctx.semanticHash,
+                },
+                timestamp: ctx.timestamp,
+            }));
+
+            if (this.config.enableLogging) {
+                console.log(
+                    `📊 [RAG] Retrieved ${ragContexts.length} relevant contexts`
+                );
+            }
+
+            return ragContexts;
+        } catch (error) {
+            console.error("❌ [RAG] Context retrieval failed:", error);
             return [];
         }
-
-        // Since we now have a single compacted context per chat, we can return it directly
-        // or perform similarity search if we want to return relevant chunks
-        const results = await this.vectorStore.similaritySearch(query, topK);
-
-        const relevantChunks = results.filter(
-            (doc) => doc.metadata.chatId === chatId
-        );
-
-        if (relevantChunks.length > 0) {
-            console.log(
-                `✅ [RAG] Retrieved pre-processed context for chat ${chatId} (${relevantChunks.length} chunks)`
-            );
-            return [context];
-        }
-
-        console.log(`❌ [RAG] No relevant context found for chat ${chatId}`);
-        return [];
     }
 
-    private cleanOldContexts(chatId: string): void {
-        const context = this.contexts.get(chatId);
-        if (!context) return;
+    async storeQueryResult(
+        query: string,
+        result: string,
+        confidence: number,
+        chatId: string,
+        metadata?: Record<string, unknown>
+    ): Promise<void> {
+        this.ensureInitialized();
 
-        const now = Date.now();
-        if (now - context.timestamp.getTime() >= this.maxContextAge) {
-            this.contexts.delete(chatId);
-            console.log(`🧹 [RAG] Removed expired context for chat ${chatId}`);
+        try {
+            await this.queryProcessor.storeQueryResult(
+                query,
+                result,
+                confidence,
+                chatId,
+                metadata
+            );
+        } catch (error) {
+            console.error("❌ [RAG] Failed to store query result:", error);
+            throw error;
+        }
+    }
+
+    async clearContext(chatId: string): Promise<void> {
+        this.ensureInitialized();
+
+        try {
+            console.log(`🧹 [RAG] Clearing context for chat ${chatId}`);
+
+            await this.contextManager.clearContext(chatId);
+
+            if (this.config.enableLogging) {
+                console.log(`✅ [RAG] Context cleared for chat ${chatId}`);
+            }
+        } catch (error) {
+            console.error("❌ [RAG] Failed to clear context:", error);
+            throw error;
         }
     }
 
     async getAllContext(chatId: string): Promise<RAGContext[]> {
         this.ensureInitialized();
-        const context = this.contexts.get(chatId);
-        return context ? [context] : [];
-    }
 
-    async clearContext(chatId: string): Promise<void> {
-        this.ensureInitialized();
-        console.log(`🧹 [RAG] Clearing context for chat ${chatId}`);
+        try {
+            const allContexts = await this.contextManager.getRelevantContext(
+                chatId,
+                "",
+                { minConfidence: 0 },
+                {},
+                1000
+            );
 
-        this.contexts.delete(chatId);
-
-        await this.initializeVectorStore();
-
-        for (const [id, context] of this.contexts.entries()) {
-            await this.addContextToVectorStore(id, context);
+            return allContexts.map((ctx) => ({
+                id: ctx.id,
+                content: ctx.content,
+                metadata: {
+                    ...ctx.metadata,
+                    confidence: ctx.confidence,
+                    contextType: ctx.contextType,
+                },
+                timestamp: ctx.timestamp,
+            }));
+        } catch (error) {
+            console.error("❌ [RAG] Failed to get all context:", error);
+            return [];
         }
     }
 
     async summarizeContext(chatId: string): Promise<string> {
         this.ensureInitialized();
 
-        const context = this.contexts.get(chatId);
-        if (!context) return "";
+        try {
+            const contexts = await this.getAllContext(chatId);
 
-        return context.content;
+            if (contexts.length === 0) {
+                return "";
+            }
+
+            const sortedContexts = contexts.sort(
+                (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+            );
+
+            const recentContexts = sortedContexts.slice(0, 5);
+            const summary = recentContexts
+                .map((ctx) => ctx.content)
+                .join(" | ");
+
+            return summary.substring(0, 1000);
+        } catch (error) {
+            console.error("❌ [RAG] Context summarization failed:", error);
+            return "";
+        }
     }
 
-    cleanupOldContexts(): void {
+    async analyzeQuery(query: string): Promise<{
+        complexity: "simple" | "moderate" | "complex";
+        type: "factual" | "analytical" | "comparative" | "procedural";
+        suggestedStrategy: string;
+        estimatedTokens: number;
+    }> {
+        this.ensureInitialized();
+        return this.queryProcessor.analyzeQuery(query);
+    }
+
+    async findSimilarContexts(
+        content: string,
+        chatId: string,
+        threshold: number = 0.7
+    ): Promise<Array<{ context: RAGContext; similarity: number }>> {
         this.ensureInitialized();
 
-        const now = Date.now();
-        const expiredChats: string[] = [];
+        try {
+            const contexts = await this.getAllContext(chatId);
+            const semanticContexts: SemanticContext[] = contexts.map((ctx) => ({
+                id: ctx.id,
+                content: ctx.content,
+                embedding: [],
+                semanticHash: "",
+                confidence: (ctx.metadata.confidence as number) || 0.5,
+                contextType:
+                    (ctx.metadata
+                        .contextType as SemanticContext["contextType"]) ||
+                    "query_result",
+                metadata: ctx.metadata,
+                timestamp: ctx.timestamp,
+            }));
 
-        for (const [chatId, context] of this.contexts.entries()) {
-            if (now - context.timestamp.getTime() >= this.maxContextAge) {
-                expiredChats.push(chatId);
-            }
+            const similar = await this.deduplicator.findSimilarContexts(
+                content,
+                semanticContexts,
+                threshold
+            );
+
+            return similar.map((item) => ({
+                context: {
+                    id: item.context.id,
+                    content: item.context.content,
+                    metadata: item.context.metadata,
+                    timestamp: item.context.timestamp,
+                },
+                similarity: item.similarity,
+            }));
+        } catch (error) {
+            console.error("❌ [RAG] Similar context search failed:", error);
+            return [];
         }
+    }
 
-        for (const chatId of expiredChats) {
-            this.contexts.delete(chatId);
-            console.log(
-                `🧹 [RAG] Cleaned up expired context for chat ${chatId}`
+    getMemoryStats(): MemoryStats & {
+        embeddingCacheStats: any;
+        deduplicationStats: any;
+        contextStats: any;
+    } {
+        this.ensureInitialized();
+
+        const baseStats = this.memoryManager.getMemoryStats(new Map());
+
+        return {
+            ...baseStats,
+            embeddingCacheStats: this.embeddingsClient.getCacheStats(),
+            deduplicationStats: this.deduplicator.getCacheStats(),
+            contextStats: this.contextManager.getContextStats(),
+        };
+    }
+
+    cleanupExpiredContexts(): void {
+        this.ensureInitialized();
+
+        console.log("🧹 [RAG] Running manual context cleanup");
+        this.contextManager.cleanupExpiredContexts();
+    }
+
+    updateConfig(newConfig: Partial<RAGServiceConfig>): void {
+        Object.assign(this.config, newConfig);
+        console.log("🔧 [RAG] Configuration updated");
+    }
+
+    getConfig(): RAGServiceConfig {
+        return { ...this.config };
+    }
+
+    async processQueryWithEnhancedRAG(
+        chatId: string,
+        query: string
+    ): Promise<{
+        enhancedQuery: string;
+        relevantContext: string;
+        confidence: number;
+    }> {
+        const result = await this.processQuery(query, chatId);
+
+        return {
+            enhancedQuery: result.enhancedQuery,
+            relevantContext: result.contextSummary,
+            confidence: result.confidence,
+        };
+    }
+
+    private ensureInitialized(): void {
+        if (!this.initialized) {
+            throw new Error(
+                "ProductionRAGService is not initialized. Call initialize() first."
             );
         }
     }
 
-    getMemoryStats(): {
-        totalChats: number;
-        totalContexts: number;
-        avgContextsPerChat: number;
-        totalCompressedChars: number;
-        avgCompressionRatio: number;
-    } {
-        const totalChats = this.contexts.size;
-        const totalContexts = totalChats;
-        const avgContextsPerChat = totalChats > 0 ? 1 : 0;
+    private startCleanupProcess(): void {
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupExpiredContexts();
+        }, 10 * 60 * 1000); // Every 10 minutes
 
-        let totalCompressedChars = 0;
-        let totalCompressionRatio = 0;
+        console.log("⏰ [RAG] Cleanup process started");
+    }
 
-        for (const context of this.contexts.values()) {
-            totalCompressedChars += context.content.length;
-            if (context.metadata.compressionRatio) {
-                totalCompressionRatio += context.metadata
-                    .compressionRatio as number;
-            }
+    async healthCheck(): Promise<{
+        status: "healthy" | "degraded" | "unhealthy";
+        components: {
+            embeddings: boolean;
+            contextManager: boolean;
+            deduplicator: boolean;
+            queryProcessor: boolean;
+            memoryManager: boolean;
+        };
+        memoryUsage: any;
+        errors: string[];
+    }> {
+        const errors: string[] = [];
+        const components = {
+            embeddings: true,
+            contextManager: true,
+            deduplicator: true,
+            queryProcessor: true,
+            memoryManager: true,
+        };
+
+        try {
+            await this.embeddingsClient.generateEmbedding("test");
+        } catch (error) {
+            components.embeddings = false;
+            errors.push(`Embeddings: ${error}`);
         }
 
-        const avgCompressionRatio =
-            totalChats > 0 ? totalCompressionRatio / totalChats : 0;
+        let memoryUsage = {};
+        try {
+            memoryUsage = this.getMemoryStats();
+        } catch (error) {
+            errors.push(`Memory stats: ${error}`);
+        }
+
+        const healthyComponents =
+            Object.values(components).filter(Boolean).length;
+        const totalComponents = Object.keys(components).length;
+
+        let status: "healthy" | "degraded" | "unhealthy" = "healthy";
+        if (healthyComponents < totalComponents) {
+            status =
+                healthyComponents > totalComponents * 0.5
+                    ? "degraded"
+                    : "unhealthy";
+        }
 
         return {
-            totalChats,
-            totalContexts,
-            avgContextsPerChat,
-            totalCompressedChars,
-            avgCompressionRatio,
+            status,
+            components,
+            memoryUsage,
+            errors,
         };
     }
 }

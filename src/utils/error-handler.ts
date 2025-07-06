@@ -10,8 +10,7 @@ export interface ErrorResponse {
 export function errorHandler(
     error: Error,
     req: Request,
-    res: Response,
-    next: NextFunction
+    res: Response
 ): void {
     const timestamp = new Date().toISOString();
     const path = req.path;

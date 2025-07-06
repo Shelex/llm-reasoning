@@ -44,7 +44,9 @@ export class ResponseParser {
                     status: "pending" as const,
                 })),
             };
-        } catch {}
+        } catch (error) {
+            console.error("failed to parse JSON:", error);
+        }
         return null;
     }
 
@@ -79,8 +81,8 @@ export class ResponseParser {
                     parameters: { reasoning: parsed.reasoning },
                 };
             }
-        } catch {
-            // Fallback parsing
+        } catch (error) {
+            console.error("failed to parse strategy selection:", error);
         }
 
         return { name: "chain_of_thought", parameters: {} };
@@ -106,7 +108,9 @@ export class ResponseParser {
                 ) {
                     return parsed.subTasks[0].query ?? clean.trim();
                 }
-            } catch {}
+            } catch (error) {
+                console.error("failed to parse query JSON:", error);
+            }
         }
 
         return clean.trim();

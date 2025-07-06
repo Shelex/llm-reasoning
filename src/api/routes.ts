@@ -42,7 +42,6 @@ export function createRoutes(
             chatService.addMessage(chatId, "user", query);
 
             let response: string;
-            let usedStrategy: string;
 
             if (reason) {
                 const result = await orchestratorService.processQuery(

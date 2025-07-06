@@ -40,8 +40,9 @@ export class OrchestratorService extends EventEmitter {
         await this.ragService.addContext(
             chatId,
             `Query decomposition: ${JSON.stringify(decomposition)}`,
+            "decomposition",
+            0.8,
             {
-                type: "decomposition",
                 originalQuery: query,
             }
         );
@@ -179,11 +180,15 @@ export class OrchestratorService extends EventEmitter {
         subTask.confidence = confidence;
         subTask.status = "completed";
 
-        await this.ragService.addContext(chatId, `Subtask result: ${result}`, {
-            type: "subtask_result",
-            subTaskId: subTask.id,
-            confidence: confidence,
-        });
+        await this.ragService.addContext(
+            chatId,
+            `Subtask result: ${result}`,
+            "subtask_result",
+            confidence,
+            {
+                subTaskId: subTask.id,
+            }
+        );
 
         if (confidence < this.retryConfidenceThreshold) {
             return await this.retrySubTaskOneMoreTime({
@@ -206,10 +211,11 @@ export class OrchestratorService extends EventEmitter {
             await this.ragService.addContext(
                 chatId,
                 `Low confidence response: ${result}`,
+                "subtask_result",
+                confidence,
                 {
-                    type: "low_confidence",
+                    lowConfidence: true,
                     subTaskId: subTask.id,
-                    confidence: confidence,
                 }
             );
         }
@@ -266,10 +272,11 @@ export class OrchestratorService extends EventEmitter {
         await this.ragService.addContext(
             options.chatId,
             `Retry result: ${retryResult.result}`,
+            "subtask_result",
+            retryResult.confidence,
             {
-                type: "retry_result",
+                retry: true,
                 subTaskId: options.subTask.id,
-                confidence: retryResult.confidence,
                 originalConfidence: options.confidence,
             }
         );

@@ -2,12 +2,11 @@ import axios, { AxiosInstance } from "axios";
 import { LLMResponse } from "../types";
 import { ResponseFilter } from "../utils/response-filter";
 import { ConfidenceCalculator } from "../llm/confidence-calculator";
-import { LLMPromptBuilder } from "../llm/prompt-builder";
 import { ChatLogger } from "../logging/chat-logger";
 
 export class LMStudioClient {
     private readonly client: AxiosInstance;
-    private readonly baseUrl: string;
+    readonly baseUrl: string;
     private readonly confidenceCalculator: ConfidenceCalculator;
     private readonly chatLogger: ChatLogger;
 
@@ -24,40 +23,7 @@ export class LMStudioClient {
         this.chatLogger = new ChatLogger();
     }
 
-    async queryLLMWithConfidence(
-        prompt: string,
-        temperature: number = 0.2,
-        chatId?: string,
-        stage?: string
-    ): Promise<LLMResponse> {
-        const confidencePrompt = LLMPromptBuilder.buildConfidencePrompt(prompt);
-        return this.queryLLMInternal(
-            confidencePrompt,
-            temperature,
-            chatId,
-            stage
-        );
-    }
-
     async queryLLM(
-        prompt: string,
-        temperature: number = 0.2,
-        chatId?: string,
-        stage?: string
-    ): Promise<LLMResponse> {
-        return this.queryLLMInternal(prompt, temperature, chatId, stage);
-    }
-
-    async queryLLMRaw(prompt: string, temperature: number) {
-        return this.client.post("/v1/chat/completions", {
-            model: "local-model",
-            messages: [{ role: "user", content: prompt }],
-            temperature,
-            stream: false,
-        });
-    }
-
-    private async queryLLMInternal(
         prompt: string,
         temperature: number = 0.2,
         chatId?: string,
@@ -107,6 +73,15 @@ export class LMStudioClient {
             console.error("LM Studio API error:", error);
             throw new Error(`Failed to query LLM: ${error}`);
         }
+    }
+
+    async queryLLMRaw(prompt: string, temperature: number) {
+        return this.client.post("/v1/chat/completions", {
+            model: "local-model",
+            messages: [{ role: "user", content: prompt }],
+            temperature,
+            stream: false,
+        });
     }
 
     async isAvailable(): Promise<boolean> {
