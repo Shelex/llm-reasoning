@@ -4,6 +4,8 @@
 
 A TypeScript backend that's basically like giving your LLM a PhD in overthinking, complete with existential crisis detection and automatic retry mechanisms when the AI gets confused about its own intelligence.
 
+RAG approach contains hybrid retrieval via vector+bm25 search and colBERT reranking.
+
 ## What This Cursed Thing Actually Does
 
 This abomination of code takes your innocent little questions and puts them through a meat grinder of reasoning (LMAO) strategies. It's like having a very anxious AI assistant that second-guesses itself so much it takes an eternity to get something out of it.
