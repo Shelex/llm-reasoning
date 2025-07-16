@@ -21,6 +21,7 @@ Make it:
 - Keep all facts exactly as they are
 - Remove awkward or robotic phrasing
 - Avoid symbols or formatting, use just new line, titles, and paragraphs
+- Provide an answer that is human-readable and easy to follow
 
 Improved answer:`;
 

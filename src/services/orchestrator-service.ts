@@ -55,9 +55,9 @@ export class OrchestratorService extends EventEmitter {
         await this.ragService.addContext(
             chatId,
             `Query classification: ${JSON.stringify(classification)}`,
-            "query_result",
-            classification.confidence,
             {
+                name: "query_result",
+                confidence: classification.confidence,
                 originalQuery: query,
                 classification,
             }
@@ -97,9 +97,9 @@ export class OrchestratorService extends EventEmitter {
         await this.ragService.addContext(
             chatId,
             `Query decomposition: ${JSON.stringify(decomposition)}`,
-            "decomposition",
-            0.8,
             {
+                name: "decomposition",
+                temperature: 0.8,
                 originalQuery: query,
             }
         );
@@ -278,15 +278,11 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
         subTask.confidence = confidence;
         subTask.status = "completed";
 
-        await this.ragService.addContext(
-            chatId,
-            `Subtask result: ${result}`,
-            "subtask_result",
+        await this.ragService.addContext(chatId, `Subtask result: ${result}`, {
+            name: "subtask_result",
             confidence,
-            {
-                subTaskId: subTask.id,
-            }
-        );
+            subTaskId: subTask.id,
+        });
 
         if (confidence < this.retryConfidenceThreshold) {
             return await this.retrySubTaskOneMoreTime({
@@ -309,9 +305,9 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
             await this.ragService.addContext(
                 chatId,
                 `Low confidence response: ${result}`,
-                "subtask_result",
-                confidence,
                 {
+                    name: "subtask_result",
+                    confidence,
                     lowConfidence: true,
                     subTaskId: subTask.id,
                 }
@@ -370,9 +366,9 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
         await this.ragService.addContext(
             options.chatId,
             `Retry result: ${retryResult.result}`,
-            "subtask_result",
-            retryResult.confidence,
             {
+                name: "subtask_result",
+                confidence: retryResult.confidence,
                 retry: true,
                 subTaskId: options.subTask.id,
                 originalConfidence: options.confidence,

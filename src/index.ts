@@ -19,7 +19,7 @@ async function startServer(): Promise<void> {
         app.use(express.urlencoded({ extended: true }));
 
         const llmClient = new LMStudioClient(process.env.LM_STUDIO_URL);
-        const ragService = new RAGService(llmClient);
+        const ragService = new RAGService();
 
         console.log("🔧 Initializing RAG service with embeddings...");
         await ragService.initialize();

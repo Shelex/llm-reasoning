@@ -1,4 +1,4 @@
-# Local LLM reasoning to make it reason
+# Local LLM reasoning just for fun
 
 **TL;DR**: Backend for opinionatedly enhanced local llm that thinks so hard it might immediately regret it.
 
@@ -20,7 +20,10 @@ Ok, if seriously:
 ## Example
 
 -   M1 Pro, 16GB RAM
--   LM Studio: `llama-3.2-3b-instruct` Q4_K_S GGUF (1.93 Gb), context window of 4k tokens.
+-   LM Studio: `bartowski/llama-3.2-3b-instruct` Q4_K_S GGUF (1.93 Gb), context window of 8k tokens.
+-   LM Studio: `text-embedding-nomic-embed-text-v1.5` (84.11 MB) for vector embeddings
+-   LM Studio: `text-embedding-colbertv2.0` Q8_0 (117.85 MB) for embeddings re-ranking
+-   Qdrant in docker: `docker run -p 6333:6333 -p 6334:6334 -v "$(pwd)/qdrant_storage:/qdrant/storage:z" qdrant/qdrant`
 -   started dev server
 -   created chat POST /api/chat/create
 
@@ -283,15 +286,30 @@ References
 Confidence level: 0.95
 ```
 
--   Seems not bad, huh, for `llama-3.2-3b-instruct` (1.93Gb) on m1 pro and context window of 4k tokens.
-    However, have tried with `Llama-3.2-1B-Instruct-4bit` with MLX - and with low parameters it fails to calculate confidence and properly structure the output, maybe additional prompt-tuning is required.
+-   Seems not bad, huh, for `llama3.2-3b` on m1 pro and context window of 8k tokens.
 
 ### The Gang
 
 -   **Orchestrator Service**: The puppet master that breaks question into tiny pieces
--   **RAG Integration**: Because regular AI hallucinations weren't enough - now we hallucinate with _context_
+-   **RAG Integration**: Because regular AI hallucinations weren't enough - now we hallucinate with _context_. (Qdrant storage, hybrid search - vector + Okapi BM25, reranked with colBERT)
 -   **LM Studio Integration**: Because who in the current economy with a sane mind has 20$/month for chatgpt or perplexity?
 -   **Retry Mechanism**: When confidence < 0.8, the AI basically goes "that's L fr, lemme cook again"
+
+### What the heck is hybrid search in RAG?
+
+Basically it means that we do not rely 100% on vector search, but also use traditional keyword search (like BM25) to find relevant documents. This way we can get more relevant results (hopefully). For this project it definitely improved the quality and the context flow in general (over previous implementations with custom implementations, in-memory storage and custom retrieval logic by pattern-matching).
+
+Hybrid systems have been found in benchmarks like BEIR to significantly improve retrieval accuracy, recall, and robustness over single-method systems.
+For example, a 2025 study in CLEF CheckThat! competition used BM25 + vector retrieval, showing best-in-class mean reciprocal rank with only a 2% gap to the top system, all with open-source models.
+
+More details:
+
+-   [milvus.io | What are the benefits of hybrid search architectures?](https://milvus.io/ai-quick-reference/what-are-the-benefits-of-hybrid-search-architectures)
+-   [lancedb | Hybrid Search: Combining BM25 and Semantic Search for Better Results with Langchain](https://blog.lancedb.com/hybrid-search-combining-bm25-and-semantic-search-for-better-results-with-lan-1358038fe7e6/)
+-   [arxiv | Domain-specific Question Answering with Hybrid Search](https://arxiv.org/abs/2412.03736)
+-   [arxiv | From Retrieval to Generation: Comparing Different Approaches](https://arxiv.org/abs/2502.20245)
+-   [arxiv | Deep Retrieval at CheckThat! 2025: Identifying Scientific Papers from Implicit Social Media Mentions via Hybrid Retrieval and Re-Ranking](https://arxiv.org/abs/2505.23250)
+-   [arxiv | ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT](https://arxiv.org/abs/2004.12832)
 
 ## How to Summon This Abomination
 
@@ -303,11 +321,13 @@ Confidence level: 0.95
 ```bash
 # clone the repo
 # open the new folder
-cd llm-reason-to-reason
+cd llm-reasoning
 # Install dependencies (and half of the internet ofc)
 npm install
 # Copy the env file
 cp .env.example .env
+# start Qdrant in docker
+docker run -p 6333:6333 -p 6334:6334 -v "$(pwd)/qdrant_storage:/qdrant/storage:z" qdrant/qdrant
 ```
 
 ### 3. Configuration

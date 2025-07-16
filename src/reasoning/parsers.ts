@@ -17,6 +17,9 @@ export class ResponseParser {
             return markdownResult;
         }
 
+        console.log(
+            `No valid JSON found in content: ${content}, returning complete response`
+        );
         return {
             subTasks: [
                 {
