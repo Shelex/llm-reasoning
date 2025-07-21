@@ -66,7 +66,13 @@ export class RAGModule {
         chatContext.documents.push(...documents);
         chatContext.lastUpdated = new Date();
 
-        await this.vectorStore.addDocuments(documents);
+        await this.vectorStore.addDocuments(documents, {
+            customPayload: [
+                {
+                    chatId: chatId,
+                },
+            ],
+        });
     }
 
     async getRelevantContext(
@@ -107,7 +113,11 @@ export class RAGModule {
         console.log(
             `Performing hybrid search for query: "${query}" with topK: ${topK}`
         );
-        const vectorResults = await this.vectorSearch(query, topK * 2);
+        const vectorResults = await this.vectorSearch(
+            chatContext.chatId,
+            query,
+            topK * 2
+        );
         console.log(`Vector search returned ${vectorResults.length} results`);
         const bm25Results = this.bm25Search(chatContext, query, topK * 2);
         console.log(`BM25 search returned ${bm25Results.length} results`);
@@ -156,12 +166,23 @@ export class RAGModule {
     }
 
     private async vectorSearch(
+        chatId: string,
         query: string,
         topK: number
     ): Promise<{ document: Document; score: number }[]> {
         const results = await this.vectorStore.similaritySearchWithScore(
             query,
-            topK
+            topK,
+            {
+                must: [
+                    {
+                        key: "chatId",
+                        match: {
+                            value: chatId,
+                        },
+                    },
+                ],
+            }
         );
 
         return results.map(([document, score]) => ({
@@ -175,7 +196,7 @@ export class RAGModule {
         query: string,
         topK: number
     ): { document: Document; score: number }[] {
-        if (!chatContext.documents || chatContext.documents.length === 0) {
+        if (!chatContext?.documents?.length) {
             return [];
         }
 
@@ -184,10 +205,16 @@ export class RAGModule {
         );
         const queryTerms = query.split(" ");
 
-        const scores = BM25(documentTexts, queryTerms, {
-            k1: this.config.bm25.k1 ?? 1.5,
-            b: this.config.bm25.b ?? 0.75,
-        }) as number[];
+        const scores = BM25(
+            documentTexts,
+            // clean up query terms to avoid issues with special characters in bm25 library, like:
+            // @example SyntaxError: Invalid regular expression: /(assuming/g: Unterminated group
+            queryTerms.map((qt) => qt.replace(/\)\(\*\./g, "")),
+            {
+                k1: this.config.bm25.k1 ?? 1.5,
+                b: this.config.bm25.b ?? 0.75,
+            }
+        ) as number[];
 
         return scores
             .map((score: number, index: number) => ({
