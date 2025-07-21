@@ -13,8 +13,10 @@ export function createRoutes(
 
     router.post("/chat/create", async (req: Request, res: Response) => {
         try {
-            const chatId = chatService.createChat();
-            res.json({ chatId, status: "created" });
+            const { name } = req.body;
+            const chatId = chatService.createChat(name);
+            const chat = chatService.getChat(chatId);
+            res.json({ chatId, name: chat?.name, status: "created" });
         } catch (error) {
             res.status(500).json({
                 error: `Failed to create chat session: ${error}`,
@@ -100,6 +102,31 @@ export function createRoutes(
         }
     });
 
+    router.patch("/chat/:id/rename", async (req: Request, res: Response) => {
+        try {
+            const chatId = req.params.id;
+            const { name } = req.body;
+
+            if (!chatService.isChatExists(chatId)) {
+                return res
+                    .status(404)
+                    .json({ error: "chat session not found" });
+            }
+
+            if (!name || typeof name !== "string" || name.trim().length === 0) {
+                return res
+                    .status(400)
+                    .json({ error: "name is required and must be a non-empty string" });
+            }
+
+            chatService.renameChat(chatId, name);
+            res.json({ status: "renamed", chatId, name });
+        } catch (error) {
+            console.error("Chat rename error:", error);
+            res.status(500).json({ error: "Failed to rename chat session" });
+        }
+    });
+
     router.get("/chat/:id/history", (req: Request, res: Response) => {
         try {
             const chatId = req.params.id;
@@ -122,6 +149,7 @@ export function createRoutes(
         try {
             const chats = chatService.getAllChats().map((chat) => ({
                 id: chat.id,
+                name: chat.name,
                 createdAt: chat.createdAt,
                 updatedAt: chat.updatedAt,
                 messageCount: chat.messages.length,

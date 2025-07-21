@@ -37,6 +37,7 @@ export interface ReasoningStrategy {
 
 export interface ChatSession {
     id: string;
+    name: string;
     messages: ChatMessage[];
     ragContext: RAGContext[];
     createdAt: Date;

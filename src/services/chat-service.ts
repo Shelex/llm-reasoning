@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
+//@ts-expect-error missing types for human-readable-ids
+import { humanReadableIds } from "human-readable-ids";
 import { ChatSession, ChatMessage, ChatEvent } from "../types";
 import { RAGService } from "./rag-service";
 import { EventEmitter } from "events";
@@ -12,10 +14,12 @@ export class ChatService extends EventEmitter {
         this.ragService = ragService;
     }
 
-    createChat(): string {
+    createChat(name?: string): string {
         const chatId = uuidv4();
+        const chatName = name ?? humanReadableIds.random();
         const session: ChatSession = {
             id: chatId,
+            name: chatName,
             messages: [],
             ragContext: [],
             createdAt: new Date(),
@@ -79,5 +83,15 @@ export class ChatService extends EventEmitter {
 
     isChatExists(chatId: string): boolean {
         return this.sessions.has(chatId);
+    }
+
+    renameChat(chatId: string, newName: string): void {
+        const session = this.sessions.get(chatId);
+        if (!session) {
+            throw new Error(`Chat session ${chatId} not found`);
+        }
+
+        session.name = newName;
+        session.updatedAt = new Date();
     }
 }
