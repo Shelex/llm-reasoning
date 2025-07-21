@@ -1,12 +1,6 @@
 import { LMStudioClient } from "./llm-client";
 import { RAGService } from "./rag";
-import { QueryClassifier } from "./query-classifier";
-import {
-    SubTask,
-    ReasoningStrategy,
-    ChatEvent,
-    QueryClassification,
-} from "../types";
+import { SubTask, ReasoningStrategy, ChatEvent } from "../types";
 import { EventEmitter } from "events";
 import { PromptBuilder, ResponseParser, StrategyFactory } from "../reasoning";
 import { AnswerBeautifier } from "../quality";
@@ -14,7 +8,6 @@ import { AnswerBeautifier } from "../quality";
 export class OrchestratorService extends EventEmitter {
     private readonly llmClient: LMStudioClient;
     private readonly ragService: RAGService;
-    private readonly queryClassifier: QueryClassifier;
     private readonly strategyFactory: StrategyFactory;
     private readonly answerBeautifier: AnswerBeautifier;
     private readonly confidenceThreshold: number = 0.6;
@@ -24,7 +17,6 @@ export class OrchestratorService extends EventEmitter {
         super();
         this.llmClient = llmClient;
         this.ragService = ragService;
-        this.queryClassifier = new QueryClassifier(llmClient);
         this.strategyFactory = new StrategyFactory(llmClient);
         this.answerBeautifier = new AnswerBeautifier(llmClient);
     }
@@ -40,83 +32,28 @@ export class OrchestratorService extends EventEmitter {
 
         await this.ragService.addContext(chatId, `Original query: ${query}`);
 
-        this.emitEvent(chatId, "thinking", { stage: "classification", query });
-        console.log(`[ORCHESTRATOR] Stage 0: Classifying and refining query`);
-
-        const classification =
-            await this.queryClassifier.classifyAndRefineQuery(query, chatId);
-        console.log(
-            `[ORCHESTRATOR] Query classified - Intent: ${classification.intent}, Complexity: ${classification.complexity}`
-        );
-
-        this.emitEvent(chatId, "classification", {
-            classification,
-            originalQuery: query,
-        });
-
-        const classificationContext = {
-            name: "query_result",
-            confidence: classification.confidence,
-            originalQuery: query,
-            classification,
-        };
-
-        this.emitEvent(chatId, "context_save", classificationContext);
-        await this.ragService.addContext(
-            chatId,
-            `Query classification: ${JSON.stringify(classification)}`,
-            classificationContext
-        );
-
-        let queryToProcess = query;
-
-        if (
-            classification.refinedQuery &&
-            classification.refinedQuery !== query &&
-            classification.refinedQuery.trim().length > 3
-        ) {
-            queryToProcess = classification.refinedQuery;
-            console.log(
-                `[ORCHESTRATOR] Using refined query: "${queryToProcess}"`
-            );
-        } else {
-            console.log(
-                `[ORCHESTRATOR] Using original query: "${queryToProcess}"`
-            );
-        }
-
         this.emitEvent(chatId, "thinking", {
             stage: "decomposition",
-            query: queryToProcess,
+            query,
         });
 
         console.log(`[ORCHESTRATOR] Stage 1: Decomposing refined query`);
-        const decomposition = await this.decomposeQuery(
-            queryToProcess,
-            chatId,
-            classification
-        );
+        const decomposition = await this.decomposeQuery(query, chatId);
         console.log(
             `✅ [ORCHESTRATOR] Query decomposed into ${decomposition.subTasks.length} subtasks`
-        );
-
-        const decompositionContext = {
-            name: "decomposition",
-            temperature: 0.8,
-            originalQuery: query,
-            decomposition,
-        };
-        this.emitEvent(chatId, "context_save", decompositionContext);
-        await this.ragService.addContext(
-            chatId,
-            `Query decomposition: ${JSON.stringify(decomposition)}`,
-            decompositionContext
         );
 
         const subTasks = decomposition.subTasks;
         const results: string[] = [];
 
         for (const subTask of subTasks) {
+            this.emitEvent(chatId, "context_save", {
+                subTask,
+            });
+            await this.ragService.addContext(
+                chatId,
+                `subTask: ${JSON.stringify(subTask)}`
+            );
             console.log(
                 `🎯 [ORCHESTRATOR] Stage 2: Processing subtask ${subTask.id}: ${subTask.query}`
             );
@@ -130,6 +67,16 @@ export class OrchestratorService extends EventEmitter {
                 0.7,
                 chatId
             );
+
+            await this.ragService.addContext(
+                chatId,
+                `Selected strategy: ${selectedStrategy.name} for subtask ${
+                    subTask.id
+                }, reason: ${
+                    selectedStrategy?.parameters?.reasoning ?? "unknown"
+                }`
+            );
+
             subTask.strategy = selectedStrategy;
             console.log(
                 `🧠 [ORCHESTRATOR] Selected strategy: ${selectedStrategy.name} for subtask ${subTask.id}`
@@ -198,15 +145,11 @@ export class OrchestratorService extends EventEmitter {
 
     private async decomposeQuery(
         query: string,
-        chatId?: string,
-        classification?: QueryClassification
+        chatId?: string
     ): Promise<{ subTasks: SubTask[] }> {
         console.log(`[ORCHESTRATOR] Decomposing query into subtasks`);
 
-        const prompt = this.buildEnhancedDecompositionPrompt(
-            query,
-            classification
-        );
+        const prompt = this.buildDecompositionPrompt(query);
         const response = await this.llmClient.queryLLM(
             prompt,
             0.7,
@@ -217,28 +160,8 @@ export class OrchestratorService extends EventEmitter {
         return ResponseParser.parseDecomposition(response.content);
     }
 
-    private buildEnhancedDecompositionPrompt(
-        query: string,
-        classification?: QueryClassification
-    ): string {
-        let prompt = PromptBuilder.buildDecomposition(query);
-
-        if (!classification) {
-            return prompt;
-        }
-
-        prompt += `\n\nAdditional Context:
-- Query Intent: ${classification.intent}
-- Query Complexity: ${classification.complexity}`;
-
-        if (classification.suggestedSubQuestions.length > 0) {
-            prompt += `\n- Suggested Sub-Questions:
-${classification.suggestedSubQuestions.map((q) => `  • ${q}`).join("\n")}
-
-Consider incorporating these suggested sub-questions into your decomposition.`;
-        }
-
-        return prompt;
+    private buildDecompositionPrompt(query: string): string {
+        return PromptBuilder.buildDecomposition(query);
     }
 
     private async executeSubTask(
@@ -299,12 +222,6 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
             confidence,
             subTaskId: subTask.id,
         };
-        this.emitEvent(chatId, "context_save", subtaskContext);
-        await this.ragService.addContext(
-            chatId,
-            `Subtask result: ${result}`,
-            subtaskContext
-        );
 
         if (confidence < this.retryConfidenceThreshold) {
             return await this.retrySubTaskOneMoreTime({
@@ -324,17 +241,18 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
                 subTask: subTask.id,
                 confidence,
             });
+            this.emitEvent(chatId, "context_save", subtaskContext);
             await this.ragService.addContext(
                 chatId,
-                `Low confidence response: ${result}`,
+                `Low confidence response for subtask, take into account to enhanced next iteration: ${result}`,
                 {
-                    name: "subtask_result",
                     confidence,
-                    lowConfidence: true,
-                    subTaskId: subTask.id,
                 }
             );
         }
+
+        this.emitEvent(chatId, "context_save", subtaskContext);
+        await this.ragService.addContext(chatId, `Subtask result: ${result}`);
 
         return result;
     }
@@ -389,10 +307,7 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
             options.chatId,
             `Retry result: ${retryResult.result}`,
             {
-                name: "subtask_result",
                 confidence: retryResult.confidence,
-                retry: true,
-                subTaskId: options.subTask.id,
                 originalConfidence: options.confidence,
             }
         );

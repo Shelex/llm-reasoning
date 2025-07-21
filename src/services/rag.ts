@@ -50,48 +50,6 @@ export class RAGService {
         this.initialized = false;
     }
 
-    async processQuery(
-        query: string,
-        chatId: string
-    ): Promise<{
-        enhancedQuery: string;
-        relevantContext: Document[];
-        contextSummary: string;
-        confidence: number;
-    }> {
-        this.ensureInitialized();
-
-        const relevantContextResults = await this.ragModule.getRelevantContext(
-            chatId,
-            query,
-            this.config.topK
-        );
-
-        if (!relevantContextResults.length) {
-            return {
-                enhancedQuery: query,
-                relevantContext: [],
-                contextSummary: "",
-                confidence: 0.5,
-            };
-        }
-
-        const relevantContext = relevantContextResults.map((r) => r.document);
-        const contextSummary = relevantContext
-            .map((doc) => doc.pageContent)
-            .join(" | ")
-            .substring(0, 1000);
-
-        const confidence = relevantContext.length > 0 ? 0.8 : 0.3;
-
-        return {
-            enhancedQuery: query,
-            relevantContext,
-            contextSummary,
-            confidence,
-        };
-    }
-
     async addContext(
         chatId: string,
         content: string,
@@ -134,20 +92,6 @@ export class RAGService {
         }));
     }
 
-    async storeQueryResult(
-        query: string,
-        result: string,
-        confidence: number,
-        chatId: string,
-        metadata?: Record<string, unknown>
-    ): Promise<void> {
-        await this.addContext(chatId, `Query: ${query}\nResult: ${result}`, {
-            ...metadata,
-            confidence,
-            type: "query_result",
-        });
-    }
-
     async clearContext(chatId: string): Promise<void> {
         this.ensureInitialized();
         await this.ragModule.clearContext(chatId);
@@ -165,55 +109,6 @@ export class RAGService {
         }));
     }
 
-    async summarizeContext(chatId: string): Promise<string> {
-        const contexts = await this.getAllContext(chatId);
-
-        if (contexts.length === 0) {
-            return "";
-        }
-
-        const sortedContexts = contexts.sort(
-            (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
-        );
-
-        const recentContexts = sortedContexts.slice(0, 5);
-        const summary = recentContexts.map((ctx) => ctx.content).join(" | ");
-
-        return summary.substring(0, 1000);
-    }
-
-    async analyzeQuery(query: string): Promise<{
-        complexity: "simple" | "moderate" | "complex";
-        type: "factual" | "analytical" | "comparative" | "procedural";
-        suggestedStrategy: string;
-        estimatedTokens: number;
-    }> {
-        const wordCount = query.split(/\s+/).length;
-        const hasQuestions = query.includes("?");
-        const hasComparisons =
-            /\b(vs|versus|compared to|better than|worse than)\b/i.test(query);
-        const hasSteps = /\b(step|first|then|next|finally|how to)\b/i.test(
-            query
-        );
-
-        let complexity: "simple" | "moderate" | "complex" = "simple";
-        if (wordCount > 20) complexity = "complex";
-        else if (wordCount > 10) complexity = "moderate";
-
-        let type: "factual" | "analytical" | "comparative" | "procedural" =
-            "factual";
-        if (hasComparisons) type = "comparative";
-        else if (hasSteps) type = "procedural";
-        else if (hasQuestions && wordCount > 5) type = "analytical";
-
-        return {
-            complexity,
-            type,
-            suggestedStrategy: `Use ${type} approach with ${complexity} processing`,
-            estimatedTokens: wordCount * 1.5,
-        };
-    }
-
     getMemoryStats(): {
         totalChats: number;
         totalDocuments: number;
@@ -228,33 +123,12 @@ export class RAGService {
         };
     }
 
-    cleanupExpiredContexts(): void {
-        this.ragModule.reset();
-    }
-
     updateConfig(newConfig: Partial<RAGServiceConfig>): void {
         Object.assign(this.config, newConfig);
     }
 
     getConfig(): RAGServiceConfig {
         return { ...this.config };
-    }
-
-    async processQueryWithEnhancedRAG(
-        chatId: string,
-        query: string
-    ): Promise<{
-        enhancedQuery: string;
-        relevantContext: string;
-        confidence: number;
-    }> {
-        const result = await this.processQuery(query, chatId);
-
-        return {
-            enhancedQuery: result.enhancedQuery,
-            relevantContext: result.contextSummary,
-            confidence: result.confidence,
-        };
     }
 
     private ensureInitialized(): void {

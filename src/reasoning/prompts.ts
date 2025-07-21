@@ -20,32 +20,50 @@ export class PromptBuilder {
             this.truncateText(result, maxCharsPerResult)
         );
     }
+
     static buildDecomposition(query: string): string {
-        return `Break down this query into specific subtasks that can be answered with factual information.
+        return `Analyze and decompose this query ONLY if it contains multiple distinct information needs that require separate research.
 
 Query: "${query}"
 
+STEP 1 - Complexity Assessment:
+First determine: Does this query actually need decomposition?
+- Simple, single-intent queries should NOT be decomposed
+- Only decompose if the query contains 2+ distinct, separable information needs
+- If query is already focused and specific, return it as-is
+
+STEP 2 - Relevance-Filtered Decomposition:
+If decomposition is needed, create subtasks that:
+- Directly address the original query's core intent
+- Can be answered independently with factual information  
+- Are essential to answering the main question
+- Avoid tangential or overly broad questions
+
+STEP 3 - Context Preservation:
+Each subtask must:
+- Maintain the original query's domain/scope
+- Preserve key entities and specific contexts mentioned
+- Focus on actionable, researchable questions
+
 Respond with JSON only:
 {
+  "needsDecomposition": true/false,
+  "reasoning": "Brief explanation of why decomposition is/isn't needed",
   "subTasks": [
     {
       "id": "1",
-      "query": "First specific question",
-      "status": "pending"
-    },
-    {
-      "id": "2",
-      "query": "Second specific question", 
-      "status": "pending"
+      "query": "First essential question that directly supports the main query",
+      "status": "pending",
+      "relevanceScore": 0.9
     }
   ]
 }
 
 Requirements:
-- Create 2-4 clear, specific questions
-- Each question should seek factual information
-- Avoid vague or speculative subtasks
-- Focus on verifiable facts`;
+- Maximum 3-4 subtasks (prefer fewer when possible)
+- Each subtask must have relevanceScore ≥ 0.8 to original query
+- Eliminate questions about definitions, background, or tangential topics
+- Focus on core factual needs that enable answering the original question`;
     }
 
     static buildStrategySelection(query: string): string {

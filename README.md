@@ -12,7 +12,6 @@ This abomination of code takes your innocent little questions and puts them thro
 
 Ok, if seriously:
 
--   **Query Classification & Refinement**: Automatically analyzes and enhances user queries
 -   **Decomposition**: Breaks complex queries into manageable subtasks
 -   **Semantic Context Management**: Maintains conversation context using vector embeddings
 -   **Adaptive Strategy Selection**: Chooses optimal reasoning approaches per query type

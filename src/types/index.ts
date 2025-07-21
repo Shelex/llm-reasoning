@@ -32,7 +32,9 @@ export interface ReasoningStrategy {
         | "skeleton_of_thought"
         | "constrained_chain_of_thought"
         | "graph_of_thoughts";
-    parameters?: Record<string, unknown>;
+    parameters?: {
+        reasoning?: string;
+    };
 }
 
 export interface ChatSession {
@@ -53,7 +55,6 @@ export interface ChatEvent {
     type:
         | "connection"
         | "thinking"
-        | "classification"
         | "subtask_start"
         | "subtask_complete"
         | "validation"
@@ -66,19 +67,4 @@ export interface ChatEvent {
         | "context_retrieved";
     data: Record<string, unknown>;
     timestamp: Date;
-}
-
-export interface QueryClassification {
-    refinedQuery: string;
-    intent:
-        | "fact"
-        | "comparison"
-        | "reasoning"
-        | "clarification"
-        | "instruction"
-        | "other";
-    complexity: "simple" | "complex";
-    suggestedSubQuestions: string[];
-    originalQuery: string;
-    confidence: number;
 }

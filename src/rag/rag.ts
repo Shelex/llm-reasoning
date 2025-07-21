@@ -209,7 +209,7 @@ export class RAGModule {
             documentTexts,
             // clean up query terms to avoid issues with special characters in bm25 library, like:
             // @example SyntaxError: Invalid regular expression: /(assuming/g: Unterminated group
-            queryTerms.map((qt) => qt.replace(/\)\(\*\./g, "")),
+            queryTerms.map((qt) => qt.replace(/[)(*.-{}]/g, "")),
             {
                 k1: this.config.bm25.k1 ?? 1.5,
                 b: this.config.bm25.b ?? 0.75,
