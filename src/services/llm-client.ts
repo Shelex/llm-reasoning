@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from "axios";
 import { LLMResponse } from "../types";
 import { ResponseFilter } from "../utils/response-filter";
 import { ConfidenceCalculator } from "../llm/confidence-calculator";
-import { ChatLogger } from "../logging/chat-logger";
+import { ChatLogger } from "../logging/chat";
 
 export class LMStudioClient {
     private readonly client: AxiosInstance;

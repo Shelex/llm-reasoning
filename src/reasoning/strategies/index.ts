@@ -4,7 +4,7 @@ export { SkeletonOfThoughtStrategy } from "./skeleton-of-thought";
 export { ConstrainedChainOfThoughtStrategy } from "./constrained-chain-of-thought";
 export { GraphOfThoughtsStrategy } from "./graph-of-thoughts";
 
-import { LMStudioClient } from "../../services/lm-studio-client";
+import { LMStudioClient } from "../../services/llm-client";
 import { ReasoningStrategy } from "../../types";
 import { ReasoningExecutor } from "../types";
 import { ChainOfThoughtStrategy } from "./chain-of-thought";

@@ -1,4 +1,4 @@
-import { LMStudioClient } from "../services/lm-studio-client";
+import { LMStudioClient } from "../services/llm-client";
 import { ResponseFilter } from "../utils/response-filter";
 
 export class AnswerBeautifier {
@@ -9,21 +9,20 @@ export class AnswerBeautifier {
         rawAnswer: string,
         chatId?: string
     ): Promise<string> {
-        const beautifyPrompt = `Transform this answer into natural, conversational language while keeping all facts accurate.
+        const beautifyPrompt = `Answer the following question with a direct, clear, and concise response:
 
 Question: "${originalQuery}"
-Answer to improve: "${rawAnswer}"
+Raw Answer: "${rawAnswer}"
 
-Make it:
-- Sound like a knowledgeable person speaking naturally
-- Clear and well-organized
-- Professional but friendly
-- Keep all facts exactly as they are
-- Remove awkward or robotic phrasing
-- Avoid symbols or formatting, use just new line, titles, and paragraphs
-- Provide an answer that is human-readable and easy to follow
+Instructions:
+- State the answer directly and clearly in the first sentence.
+- Only add factual context or brief explanation **if it directly clarifies the answer**.
+- Do not include additional background, mechanisms, or unrelated details unless specifically asked.
+- Do not repeat the question or provide generic introductory sentences.
+- Keep the tone professional and human.
+- Do not add any commentary, disclaimers, or extraneous details outside of what is necessary to give the answer.
 
-Improved answer:`;
+Write your answer below:`;
 
         const response = await this.llmClient.queryLLM(
             beautifyPrompt,

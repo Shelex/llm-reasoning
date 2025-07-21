@@ -1,4 +1,4 @@
-import { LMStudioClient } from "./lm-studio-client";
+import { LMStudioClient } from "./llm-client";
 import { QueryClassification } from "../types";
 
 export class QueryClassifier {

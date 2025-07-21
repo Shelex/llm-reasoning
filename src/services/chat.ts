@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 //@ts-expect-error missing types for human-readable-ids
 import { humanReadableIds } from "human-readable-ids";
 import { ChatSession, ChatMessage, ChatEvent } from "../types";
-import { RAGService } from "./rag-service";
+import { RAGService } from "./rag";
 import { EventEmitter } from "events";
 
 export class ChatService extends EventEmitter {
@@ -77,7 +77,7 @@ export class ChatService extends EventEmitter {
         return Array.from(this.sessions.values());
     }
 
-    emitChatEvent(chatId: string, event: ChatEvent): void {
+    emitEvent(chatId: string, event: ChatEvent): void {
         this.emit("chat_event", chatId, event);
     }
 

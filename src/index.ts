@@ -1,10 +1,11 @@
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
-import { LMStudioClient } from "./services/lm-studio-client";
-import { RAGService } from "./services/rag-service";
-import { OrchestratorService } from "./services/orchestrator-service";
-import { ChatService } from "./services/chat-service";
+import { LMStudioClient } from "./services/llm-client";
+import { RAGService } from "./services/rag";
+import { OrchestratorService } from "./services/orchestrator";
+import { ChatService } from "./services/chat";
+import { WebSocketService } from "./services/websocket";
 import { createRoutes } from "./api/routes";
 import { errorHandler, notFoundHandler } from "./utils/error-handler";
 
@@ -31,6 +32,21 @@ async function startServer(): Promise<void> {
         );
         const chatService = new ChatService(ragService);
 
+        const webSocketService = new WebSocketService(server, chatService);
+
+        chatService.on(
+            "chat_event",
+            (chatId: string, event: import("./types").ChatEvent) => {
+                webSocketService.broadcastToChatRoom(chatId, event);
+            }
+        );
+        orchestratorService.on(
+            "chat_event",
+            (chatId: string, event: import("./types").ChatEvent) => {
+                chatService.emitEvent(chatId, event);
+            }
+        );
+
         const routes = createRoutes(
             chatService,
             orchestratorService,
@@ -43,6 +59,9 @@ async function startServer(): Promise<void> {
 
         server.listen(port, () => {
             console.log(`🚀 Server running on port ${port}`);
+            console.log(
+                `🔌 WebSocket server available at ws://localhost:${port}/ws/chat?chatId=<chat-id>`
+            );
             console.log(
                 `🧠 LLM client configured for ${
                     process.env.LM_STUDIO_URL ?? "http://localhost:1234"

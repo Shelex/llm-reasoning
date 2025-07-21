@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
-import { ChatService } from "../services/chat-service";
-import { OrchestratorService } from "../services/orchestrator-service";
-import { LMStudioClient } from "../services/lm-studio-client";
+import { ChatService } from "../services/chat";
+import { OrchestratorService } from "../services/orchestrator";
+import { LMStudioClient } from "../services/llm-client";
 import { QueryRequest } from "../types";
 
 export function createRoutes(
@@ -41,6 +41,12 @@ export function createRoutes(
                     .json({ error: "Query is required and must be a string" });
             }
 
+            chatService.emitEvent(chatId, {
+                type: "processing_start",
+                data: { query, reasoning: reason },
+                timestamp: new Date()
+            });
+
             chatService.addMessage(chatId, "user", query);
 
             let response: string;
@@ -60,6 +66,12 @@ export function createRoutes(
                     `⚡ [DIRECT] Bypassing orchestrator - sending directly to LLM`
                 );
 
+                chatService.emitEvent(chatId, {
+                    type: "thinking",
+                    data: { stage: "direct_llm_query", query },
+                    timestamp: new Date()
+                });
+
                 const llmResponse = await llmClient.queryLLM(query);
                 response = llmResponse.content;
 
@@ -73,6 +85,12 @@ export function createRoutes(
 
             chatService.addMessage(chatId, "assistant", response);
 
+            chatService.emitEvent(chatId, {
+                type: "processing_end",
+                data: { response, reasoning: reason },
+                timestamp: new Date()
+            });
+
             res.json({
                 chatId,
                 response,
@@ -80,6 +98,15 @@ export function createRoutes(
             });
         } catch (error) {
             console.error("Chat ask error:", error);
+            
+            if (req.params.id) {
+                chatService.emitEvent(req.params.id, {
+                    type: "error",
+                    data: { error: error instanceof Error ? error.message : "Unknown error" },
+                    timestamp: new Date()
+                });
+            }
+            
             res.status(500).json({ error: "Failed to process query" });
         }
     });

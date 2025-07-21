@@ -1,4 +1,4 @@
-import { LMStudioClient } from "../../services/lm-studio-client";
+import { LMStudioClient } from "../../services/llm-client";
 import { ReasoningResult, ReasoningExecutor } from "../types";
 
 export abstract class BaseReasoningStrategy implements ReasoningExecutor {

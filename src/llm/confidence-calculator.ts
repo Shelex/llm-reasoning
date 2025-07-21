@@ -1,4 +1,4 @@
-import { LMStudioClient } from "../services/lm-studio-client";
+import { LMStudioClient } from "../services/llm-client";
 
 export class ConfidenceCalculator {
     constructor(private readonly llmClient: LMStudioClient) {}

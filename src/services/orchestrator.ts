@@ -1,5 +1,5 @@
-import { LMStudioClient } from "./lm-studio-client";
-import { RAGService } from "./rag-service";
+import { LMStudioClient } from "./llm-client";
+import { RAGService } from "./rag";
 import { QueryClassifier } from "./query-classifier";
 import {
     SubTask,
@@ -38,6 +38,8 @@ export class OrchestratorService extends EventEmitter {
         );
         console.log(`[ORCHESTRATOR] Query: ${query}`);
 
+        await this.ragService.addContext(chatId, `Original query: ${query}`);
+
         this.emitEvent(chatId, "thinking", { stage: "classification", query });
         console.log(`[ORCHESTRATOR] Stage 0: Classifying and refining query`);
 
@@ -52,15 +54,18 @@ export class OrchestratorService extends EventEmitter {
             originalQuery: query,
         });
 
+        const classificationContext = {
+            name: "query_result",
+            confidence: classification.confidence,
+            originalQuery: query,
+            classification,
+        };
+
+        this.emitEvent(chatId, "context_save", classificationContext);
         await this.ragService.addContext(
             chatId,
             `Query classification: ${JSON.stringify(classification)}`,
-            {
-                name: "query_result",
-                confidence: classification.confidence,
-                originalQuery: query,
-                classification,
-            }
+            classificationContext
         );
 
         let queryToProcess = query;
@@ -94,14 +99,18 @@ export class OrchestratorService extends EventEmitter {
         console.log(
             `✅ [ORCHESTRATOR] Query decomposed into ${decomposition.subTasks.length} subtasks`
         );
+
+        const decompositionContext = {
+            name: "decomposition",
+            temperature: 0.8,
+            originalQuery: query,
+            decomposition,
+        };
+        this.emitEvent(chatId, "context_save", decompositionContext);
         await this.ragService.addContext(
             chatId,
             `Query decomposition: ${JSON.stringify(decomposition)}`,
-            {
-                name: "decomposition",
-                temperature: 0.8,
-                originalQuery: query,
-            }
+            decompositionContext
         );
 
         const subTasks = decomposition.subTasks;
@@ -252,6 +261,9 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
 
         console.log(`[ORCHESTRATOR] Subtask query: "${subTask.query}"`);
 
+        this.emitEvent(chatId, "context_retrieve", {
+            query: subTask.query,
+        });
         const context = await this.ragService.getRelevantContext(
             chatId,
             subTask.query
@@ -260,6 +272,10 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
             `📚 [ORCHESTRATOR] Retrieved ${context.length} context items for subtask ${subTask.id}`
         );
         const contextSummary = context.map((c) => c.content).join("\n\n");
+        this.emitEvent(chatId, "context_retrieved", {
+            query: subTask.query,
+            context: contextSummary,
+        });
 
         const executor = this.strategyFactory.getStrategy(strategy);
         console.log(
@@ -278,11 +294,17 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
         subTask.confidence = confidence;
         subTask.status = "completed";
 
-        await this.ragService.addContext(chatId, `Subtask result: ${result}`, {
+        const subtaskContext = {
             name: "subtask_result",
             confidence,
             subTaskId: subTask.id,
-        });
+        };
+        this.emitEvent(chatId, "context_save", subtaskContext);
+        await this.ragService.addContext(
+            chatId,
+            `Subtask result: ${result}`,
+            subtaskContext
+        );
 
         if (confidence < this.retryConfidenceThreshold) {
             return await this.retrySubTaskOneMoreTime({
@@ -450,6 +472,11 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
                 `🔄 [ORCHESTRATOR] Creating retry prompt for subtask ${subTask.id}`
             );
 
+            this.emitEvent(chatId, "context_retrieve", {
+                query: subTask.query,
+                reason: "retry",
+                confidence: previousConfidence,
+            });
             const additionalContext = await this.ragService.getRelevantContext(
                 chatId,
                 subTask.query,
@@ -462,6 +489,12 @@ Consider incorporating these suggested sub-questions into your decomposition.`;
             console.log(
                 `📚 [ORCHESTRATOR] Retrieved ${additionalContext.length} additional context items for retry`
             );
+
+            this.emitEvent(chatId, "context_retrieved", {
+                query: subTask.query,
+                reason: "retry",
+                enhancedContext,
+            });
 
             const retryPrompt = PromptBuilder.buildRetryPrompt(
                 subTask.query,

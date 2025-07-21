@@ -67,7 +67,7 @@ export class RAGService {
             this.config.topK
         );
 
-        if (relevantContextResults.length === 0) {
+        if (!relevantContextResults.length) {
             return {
                 enhancedQuery: query,
                 relevantContext: [],
@@ -82,11 +82,13 @@ export class RAGService {
             .join(" | ")
             .substring(0, 1000);
 
+        const confidence = relevantContext.length > 0 ? 0.8 : 0.3;
+
         return {
             enhancedQuery: query,
             relevantContext,
             contextSummary,
-            confidence: relevantContext.length > 0 ? 0.8 : 0.3,
+            confidence,
         };
     }
 
@@ -210,31 +212,6 @@ export class RAGService {
             suggestedStrategy: `Use ${type} approach with ${complexity} processing`,
             estimatedTokens: wordCount * 1.5,
         };
-    }
-
-    async findSimilarContexts(
-        content: string,
-        chatId: string,
-        threshold: number = 0.7
-    ): Promise<Array<{ context: RAGContext; similarity: number }>> {
-        const contexts = await this.getAllContext(chatId);
-
-        return contexts
-            .map((context) => ({
-                context,
-                similarity: this.calculateSimilarity(content, context.content),
-            }))
-            .filter((item) => item.similarity >= threshold);
-    }
-
-    private calculateSimilarity(text1: string, text2: string): number {
-        const words1 = text1.toLowerCase().split(/\s+/);
-        const words2 = text2.toLowerCase().split(/\s+/);
-
-        const intersection = words1.filter((word) => words2.includes(word));
-        const union = Array.from(new Set([...words1, ...words2]));
-
-        return intersection.length / union.length;
     }
 
     getMemoryStats(): {

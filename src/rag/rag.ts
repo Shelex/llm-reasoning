@@ -72,7 +72,7 @@ export class RAGModule {
     async getRelevantContext(
         chatId: string,
         query: string,
-        topK: number = 10
+        topK: number = 5
     ): Promise<RelevantContext[]> {
         console.log(
             `Retrieving relevant context for chatId: ${chatId}, query: "${query}", topK: ${topK}`
@@ -80,7 +80,7 @@ export class RAGModule {
         await this.initializeVectorStore();
 
         const chatContext = this.chatContexts.get(chatId);
-        if (!chatContext || chatContext.documents.length === 0) {
+        if (!chatContext?.documents?.length) {
             return [];
         }
 
