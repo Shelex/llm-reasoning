@@ -18,6 +18,8 @@ async function startServer(): Promise<void> {
         app.use(cors());
         app.use(express.json({ limit: "10mb" }));
         app.use(express.urlencoded({ extended: true }));
+        
+        app.use(express.static('web'));
 
         const llmClient = new LMStudioClient(process.env.LM_STUDIO_URL);
         const ragService = new RAGService();

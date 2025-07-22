@@ -19,7 +19,7 @@ export class LMStudioEmbeddings extends Embeddings {
         this.apiUrl = config.apiUrl ?? "http://localhost:1234/v1";
         this.modelName =
             config.modelName ?? "text-embedding-nomic-embed-text-v1.5";
-        this.timeout = config.timeout ?? 30 * 1000; // 30 s
+        this.timeout = config.timeout ?? 60 * 1000; // 60 s
         this.batchSize = config.batchSize ?? 100;
     }
 
