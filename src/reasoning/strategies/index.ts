@@ -4,8 +4,7 @@ export { SkeletonOfThoughtStrategy } from "./skeleton-of-thought";
 export { ConstrainedChainOfThoughtStrategy } from "./constrained-chain-of-thought";
 export { GraphOfThoughtsStrategy } from "./graph-of-thoughts";
 
-import { LMStudioClient } from "../../services/llm-client";
-import { ReasoningStrategy } from "../../types";
+import { LLMClient, ReasoningStrategy } from "../../types";
 import { ReasoningExecutor } from "../types";
 import { ChainOfThoughtStrategy } from "./chain-of-thought";
 import { SkeletonOfThoughtStrategy } from "./skeleton-of-thought";
@@ -15,7 +14,7 @@ import { GraphOfThoughtsStrategy } from "./graph-of-thoughts";
 export class StrategyFactory {
     private readonly strategies: Map<string, ReasoningExecutor>;
 
-    constructor(llmClient: LMStudioClient) {
+    constructor(llmClient: LLMClient) {
         this.strategies = new Map([
             ["chain_of_thought", new ChainOfThoughtStrategy(llmClient)],
             ["skeleton_of_thought", new SkeletonOfThoughtStrategy(llmClient)],

@@ -1,10 +1,10 @@
 import axios, { AxiosInstance } from "axios";
-import { LLMResponse } from "../types";
-import { ResponseFilter } from "../utils/response-filter";
-import { ConfidenceCalculator } from "../llm/confidence-calculator";
-import { ChatLogger } from "../logging/chat";
+import { LLMClient, LLMResponse } from "../../types";
+import { ResponseFilter } from "../../utils/response-filter";
+import { ConfidenceCalculator } from "../../llm/confidence-calculator";
+import { ChatLogger } from "../../logging/chat";
 
-export class LMStudioClient {
+export class LMStudioClient implements LLMClient {
     private readonly client: AxiosInstance;
     readonly baseUrl: string;
     private readonly confidenceCalculator: ConfidenceCalculator;

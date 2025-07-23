@@ -3,7 +3,6 @@ import { RAGModule, createRAGModule } from "../rag";
 import { Document } from "@langchain/core/documents";
 
 export interface RAGServiceConfig {
-    openAIApiKey?: string;
     topK: number;
     enableLogging: boolean;
     qdrantUrl: string;

@@ -1,10 +1,10 @@
-import { LMStudioClient } from "../../services/llm-client";
+import { LLMClient } from "../../types";
 import { ReasoningResult, ReasoningExecutor } from "../types";
 
 export abstract class BaseReasoningStrategy implements ReasoningExecutor {
-    protected readonly llmClient: LMStudioClient;
+    protected readonly llmClient: LLMClient;
 
-    constructor(llmClient: LMStudioClient) {
+    constructor(llmClient: LLMClient) {
         this.llmClient = llmClient;
     }
 

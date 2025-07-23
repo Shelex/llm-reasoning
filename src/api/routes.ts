@@ -1,13 +1,12 @@
 import { Router, Request, Response } from "express";
 import { ChatService } from "../services/chat";
 import { OrchestratorService } from "../services/orchestrator";
-import { LMStudioClient } from "../services/llm-client";
-import { QueryRequest } from "../types";
+import { LLMClient, QueryRequest } from "../types";
 
 export function createRoutes(
     chatService: ChatService,
     orchestratorService: OrchestratorService,
-    llmClient: LMStudioClient
+    llmClient: LLMClient
 ): Router {
     const router = Router();
 
@@ -44,7 +43,7 @@ export function createRoutes(
             chatService.emitEvent(chatId, {
                 type: "processing_start",
                 data: { query, reasoning: reason },
-                timestamp: new Date()
+                timestamp: new Date(),
             });
 
             chatService.addMessage(chatId, "user", query);
@@ -69,7 +68,7 @@ export function createRoutes(
                 chatService.emitEvent(chatId, {
                     type: "thinking",
                     data: { stage: "direct_llm_query", query },
-                    timestamp: new Date()
+                    timestamp: new Date(),
                 });
 
                 const llmResponse = await llmClient.queryLLM(query);
@@ -88,7 +87,7 @@ export function createRoutes(
             chatService.emitEvent(chatId, {
                 type: "processing_end",
                 data: { response, reasoning: reason },
-                timestamp: new Date()
+                timestamp: new Date(),
             });
 
             res.json({
@@ -98,15 +97,20 @@ export function createRoutes(
             });
         } catch (error) {
             console.error("Chat ask error:", error);
-            
+
             if (req.params.id) {
                 chatService.emitEvent(req.params.id, {
                     type: "error",
-                    data: { error: error instanceof Error ? error.message : "Unknown error" },
-                    timestamp: new Date()
+                    data: {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : "Unknown error",
+                    },
+                    timestamp: new Date(),
                 });
             }
-            
+
             res.status(500).json({ error: "Failed to process query" });
         }
     });
@@ -141,9 +145,9 @@ export function createRoutes(
             }
 
             if (!name || typeof name !== "string" || name.trim().length === 0) {
-                return res
-                    .status(400)
-                    .json({ error: "name is required and must be a non-empty string" });
+                return res.status(400).json({
+                    error: "name is required and must be a non-empty string",
+                });
             }
 
             chatService.renameChat(chatId, name);

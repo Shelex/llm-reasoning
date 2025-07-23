@@ -1,7 +1,7 @@
-import { LMStudioClient } from "../services/llm-client";
+import { LLMClient } from "../types";
 
 export class ConfidenceCalculator {
-    constructor(private readonly llmClient: LMStudioClient) {}
+    constructor(private readonly llmClient: LLMClient) {}
 
     async calculateWithLLM(content: string): Promise<number> {
         if (!content || content.trim().length === 0) return 0;
@@ -22,7 +22,7 @@ Respond with only a number (e.g., 0.85)`;
 
             const response = await this.llmClient.queryLLMRaw(
                 confidencePrompt,
-                0.05,
+                0.05
             );
             const confidenceText =
                 response.data.choices[0]?.message?.content || "";

@@ -68,3 +68,15 @@ export interface ChatEvent {
     data: Record<string, unknown>;
     timestamp: Date;
 }
+
+export interface LLMClient {
+    readonly baseUrl: string;
+    queryLLM(
+        prompt: string,
+        temperature?: number,
+        chatId?: string,
+        stage?: string
+    ): Promise<LLMResponse>;
+    queryLLMRaw(prompt: string, temperature: number): Promise<any>;
+    isAvailable(): Promise<boolean>;
+}

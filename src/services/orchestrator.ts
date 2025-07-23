@@ -1,19 +1,18 @@
-import { LMStudioClient } from "./llm-client";
 import { RAGService } from "./rag";
-import { SubTask, ReasoningStrategy, ChatEvent } from "../types";
+import { LLMClient, SubTask, ReasoningStrategy, ChatEvent } from "../types";
 import { EventEmitter } from "events";
 import { PromptBuilder, ResponseParser, StrategyFactory } from "../reasoning";
 import { AnswerBeautifier } from "../quality";
 
 export class OrchestratorService extends EventEmitter {
-    private readonly llmClient: LMStudioClient;
+    private readonly llmClient: LLMClient;
     private readonly ragService: RAGService;
     private readonly strategyFactory: StrategyFactory;
     private readonly answerBeautifier: AnswerBeautifier;
     private readonly confidenceThreshold: number = 0.6;
     private readonly retryConfidenceThreshold: number = 0.8;
 
-    constructor(llmClient: LMStudioClient, ragService: RAGService) {
+    constructor(llmClient: LLMClient, ragService: RAGService) {
         super();
         this.llmClient = llmClient;
         this.ragService = ragService;

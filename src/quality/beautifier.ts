@@ -1,8 +1,8 @@
-import { LMStudioClient } from "../services/llm-client";
+import { LLMClient } from "../types";
 import { ResponseFilter } from "../utils/response-filter";
 
 export class AnswerBeautifier {
-    constructor(private readonly llmClient: LMStudioClient) {}
+    constructor(private readonly llmClient: LLMClient) {}
 
     async beautifyAnswer(
         originalQuery: string,

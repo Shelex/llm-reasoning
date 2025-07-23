@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
-import { LMStudioClient } from "./services/llm-client";
+import { createLLMClient } from "./services/llm";
 import { RAGService } from "./services/rag";
 import { OrchestratorService } from "./services/orchestrator";
 import { ChatService } from "./services/chat";
@@ -18,10 +18,10 @@ async function startServer(): Promise<void> {
         app.use(cors());
         app.use(express.json({ limit: "10mb" }));
         app.use(express.urlencoded({ extended: true }));
-        
-        app.use(express.static('web'));
 
-        const llmClient = new LMStudioClient(process.env.LM_STUDIO_URL);
+        app.use(express.static("web"));
+
+        const llmClient = createLLMClient();
         const ragService = new RAGService();
 
         console.log("🔧 Initializing RAG service with embeddings...");
@@ -61,20 +61,7 @@ async function startServer(): Promise<void> {
 
         server.listen(port, () => {
             console.log(`🚀 Server running on port ${port}`);
-            console.log(
-                `🔌 WebSocket server available at ws://localhost:${port}/ws/chat?chatId=<chat-id>`
-            );
-            console.log(
-                `🧠 LLM client configured for ${
-                    process.env.LM_STUDIO_URL ?? "http://localhost:1234"
-                }`
-            );
-            console.log(
-                `🧠 RAG service with LangChain embeddings and intelligent context management`
-            );
-            console.log(
-                `✨ Answer beautification enabled for natural, human-like responses`
-            );
+            console.log(`🌐 Web interface is available at http://localhost:${port}`);
         });
 
         process.on("SIGTERM", () => {
