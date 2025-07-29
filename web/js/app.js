@@ -159,7 +159,7 @@ export class App {
         this.ui.showModal(
             "Create New Chat",
             "Create",
-            "Enter chat name...",
+            "Enter chat name (optional)...",
             "",
             "create"
         );
@@ -180,12 +180,12 @@ export class App {
 
     async handleModalConfirm() {
         const name = this.ui.getModalInput();
-        if (!name) {
+        const mode = this.ui.getModalMode();
+
+        if (mode === "rename" && !name) {
             this.ui.chatNameInput.focus();
             return;
         }
-
-        const mode = this.ui.getModalMode();
 
         try {
             if (mode === "create") {

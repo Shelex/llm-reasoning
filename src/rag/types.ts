@@ -1,7 +1,7 @@
 import { Document } from "@langchain/core/documents";
 import { Embeddings } from "@langchain/core/embeddings";
 
-export interface RAG3Config {
+export interface RagConfig {
     qdrant: {
         url: string;
         apiKey?: string;

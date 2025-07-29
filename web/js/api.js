@@ -23,12 +23,17 @@ export class ApiClient {
     }
 
     async createChat(name) {
+        const requestBody = {};
+        if (name) {
+            requestBody.name = name;
+        }
+
         const response = await fetch(`${this.baseUrl}/chat/create`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({ name }),
+            body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {

@@ -668,3 +668,11 @@ header h1 {
         gap: 0.5rem;
     }
 }
+
+.input-hint {
+    display: block;
+    margin-top: 0.5rem;
+    color: #666;
+    font-size: 0.875rem;
+    font-style: italic;
+}

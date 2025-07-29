@@ -5,7 +5,7 @@ import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import BM25 from "okapibm25";
 import axios from "axios";
 import {
-    RAG3Config,
+    RagConfig,
     ChatContext,
     RelevantContext,
     ColBERTRerankResponse,
@@ -14,14 +14,14 @@ import {
 import { LMStudioEmbeddings } from "./embeddings";
 
 export class RAGModule {
-    private config: RAG3Config;
+    private config: RagConfig;
     private vectorStore!: QdrantVectorStore;
     private initialized: boolean = false;
     private readonly qdrantClient: QdrantClient;
     private readonly chatContexts: Map<string, ChatContext> = new Map();
     private readonly textSplitter: RecursiveCharacterTextSplitter;
 
-    constructor(config: RAG3Config) {
+    constructor(config: RagConfig) {
         this.config = config;
         this.qdrantClient = new QdrantClient({
             url: config.qdrant.url,
@@ -336,7 +336,7 @@ export class RAGModule {
         initialized: boolean;
         chatContextCount: number;
         totalDocuments: number;
-        configuration: RAG3Config;
+        configuration: RagConfig;
     } {
         const totalDocuments = Array.from(this.chatContexts.values()).reduce(
             (sum, context) => sum + context.documents.length,
@@ -437,7 +437,7 @@ export class RAGModule {
         return context ? context.documents : [];
     }
 
-    updateConfig(newConfig: Partial<RAG3Config>): void {
+    updateConfig(newConfig: Partial<RagConfig>): void {
         this.config = { ...this.config, ...newConfig };
     }
 
@@ -451,8 +451,8 @@ export class RAGModule {
     }
 }
 
-export function createRAGModule(config: Partial<RAG3Config>): RAGModule {
-    const defaultConfig: RAG3Config = {
+export function createRAGModule(config: Partial<RagConfig>): RAGModule {
+    const defaultConfig: RagConfig = {
         lmStudioApiUrl: config.lmStudioApiUrl ?? "http://localhost:1234/v1",
         qdrant: {
             ...config.qdrant,
