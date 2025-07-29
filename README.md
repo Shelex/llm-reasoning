@@ -13,7 +13,7 @@ Ok, if seriously:
 -   **MAP Planner**: Decomposes queries into atomic subtasks using Model-as-Planner paradigm
 -   **LangGraph Orchestration**: Stateful graph execution with checkpoints and resumable runs
 -   **Subtask Chaining**: Each subtask builds upon previous results for coherent reasoning
--   **Agentic RAG**: Multi-hop retrieval with query rewriting and self-grading
+-   **RAG**: Qdrant vector database with hybrid search (BM25 + vector) and ColBERT reranking, subtasks context population
 -   **Document Chunking**: Text splitting with LangChain for better retrieval
 -   **Strategy Selection**: Adaptive reasoning (so-called) (CoT, SoT, GoT, CCoT) per subtask
 -   **Self-Refine**: Continuous improvement through critic feedback loops
