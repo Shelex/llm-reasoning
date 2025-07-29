@@ -1,4 +1,4 @@
-import { LLMClient } from "../types";
+import { LLMClient } from "../services/llm/client";
 import { ResponseFilter } from "../utils/response-filter";
 
 export class AnswerBeautifier {

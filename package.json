@@ -13,6 +13,8 @@
   "dependencies": {
     "@langchain/community": "^0.3.48",
     "@langchain/core": "^0.3.62",
+    "@langchain/langgraph": "^0.3.11",
+    "@langchain/openai": "^0.6.3",
     "@langchain/qdrant": "^0.1.2",
     "@qdrant/js-client-rest": "^1.14.1",
     "axios": "^1.6.2",

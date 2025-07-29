@@ -1,6 +1,7 @@
 import { Document } from "@langchain/core/documents";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import { QdrantClient } from "@qdrant/js-client-rest";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import BM25 from "okapibm25";
 import axios from "axios";
 import {
@@ -14,16 +15,23 @@ import { LMStudioEmbeddings } from "./embeddings";
 
 export class RAGModule {
     private config: RAG3Config;
-    private qdrantClient: QdrantClient;
     private vectorStore!: QdrantVectorStore;
-    private chatContexts: Map<string, ChatContext> = new Map();
     private initialized: boolean = false;
+    private readonly qdrantClient: QdrantClient;
+    private readonly chatContexts: Map<string, ChatContext> = new Map();
+    private readonly textSplitter: RecursiveCharacterTextSplitter;
 
     constructor(config: RAG3Config) {
         this.config = config;
         this.qdrantClient = new QdrantClient({
             url: config.qdrant.url,
             apiKey: config.qdrant.apiKey,
+        });
+
+        this.textSplitter = new RecursiveCharacterTextSplitter({
+            chunkSize: config.chunking?.chunkSize ?? 1000,
+            chunkOverlap: config.chunking?.chunkOverlap ?? 200,
+            separators: ["\n\n", "\n", " ", ""],
         });
     }
 
@@ -51,7 +59,25 @@ export class RAGModule {
     ): Promise<void> {
         await this.initializeVectorStore();
 
-        const documents = Array.isArray(context) ? context : [context];
+        const inputs = Array.isArray(context) ? context : [context];
+
+        const documents: Document[] = [];
+        for (const input of inputs) {
+            const chunks = await this.textSplitter.splitDocuments([input]);
+            const enrichedChunks = chunks.map(
+                (chunk: Document, index: number) =>
+                    new Document({
+                        pageContent: chunk.pageContent,
+                        metadata: {
+                            ...input.metadata,
+                            chunkIndex: index,
+                            totalChunks: chunks.length,
+                            originalLength: input.pageContent.length,
+                        },
+                    })
+            );
+            documents.push(...enrichedChunks);
+        }
 
         let chatContext = this.chatContexts.get(chatId);
         if (!chatContext) {
@@ -67,11 +93,9 @@ export class RAGModule {
         chatContext.lastUpdated = new Date();
 
         await this.vectorStore.addDocuments(documents, {
-            customPayload: [
-                {
-                    chatId: chatId,
-                },
-            ],
+            customPayload: documents.map(() => ({
+                chatId: chatId,
+            })),
         });
     }
 
@@ -455,6 +479,10 @@ export function createRAGModule(config: Partial<RAG3Config>): RAGModule {
             bm25Weight: config.hybrid?.bm25Weight ?? 0.4,
             rerankTopK: config.hybrid?.rerankTopK ?? 20,
             finalTopK: config.hybrid?.finalTopK ?? 10,
+        },
+        chunking: {
+            chunkSize: config.chunking?.chunkSize ?? 1000,
+            chunkOverlap: config.chunking?.chunkOverlap ?? 200,
         },
         embeddings: new LMStudioEmbeddings({
             apiUrl: config.lmStudioApiUrl ?? "http://localhost:1234/v1",

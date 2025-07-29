@@ -27,6 +27,12 @@ export interface RAG3Config {
         rerankTopK?: number;
         finalTopK?: number;
     };
+    
+    chunking?: {
+        chunkSize?: number;
+        chunkOverlap?: number;
+    };
+    
     embeddings: Embeddings;
     lmStudioApiUrl: string;
 }

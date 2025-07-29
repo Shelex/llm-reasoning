@@ -57,6 +57,7 @@ export interface ChatEvent {
         | "thinking"
         | "subtask_start"
         | "subtask_complete"
+        | "subtask_strategy"
         | "validation"
         | "final_answer"
         | "processing_start"
@@ -67,16 +68,4 @@ export interface ChatEvent {
         | "context_retrieved";
     data: Record<string, unknown>;
     timestamp: Date;
-}
-
-export interface LLMClient {
-    readonly baseUrl: string;
-    queryLLM(
-        prompt: string,
-        temperature?: number,
-        chatId?: string,
-        stage?: string
-    ): Promise<LLMResponse>;
-    queryLLMRaw(prompt: string, temperature: number): Promise<any>;
-    isAvailable(): Promise<boolean>;
 }

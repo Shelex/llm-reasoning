@@ -3,7 +3,7 @@ import cors from "cors";
 import { createServer } from "http";
 import { createLLMClient } from "./services/llm";
 import { RAGService } from "./services/rag";
-import { OrchestratorService } from "./services/orchestrator";
+import { Planner } from "./services/planner";
 import { ChatService } from "./services/chat";
 import { WebSocketService } from "./services/websocket";
 import { createRoutes } from "./api/routes";
@@ -28,10 +28,7 @@ async function startServer(): Promise<void> {
         await ragService.initialize();
         console.log("✅ RAG service initialized successfully");
 
-        const orchestratorService = new OrchestratorService(
-            llmClient,
-            ragService
-        );
+        const planner = new Planner(llmClient, ragService);
         const chatService = new ChatService(ragService);
 
         const webSocketService = new WebSocketService(server, chatService);
@@ -42,18 +39,14 @@ async function startServer(): Promise<void> {
                 webSocketService.broadcastToChatRoom(chatId, event);
             }
         );
-        orchestratorService.on(
+        planner.on(
             "chat_event",
             (chatId: string, event: import("./types").ChatEvent) => {
                 chatService.emitEvent(chatId, event);
             }
         );
 
-        const routes = createRoutes(
-            chatService,
-            orchestratorService,
-            llmClient
-        );
+        const routes = createRoutes(chatService, planner, llmClient);
         app.use("/api", routes);
 
         app.use(notFoundHandler);
@@ -61,7 +54,9 @@ async function startServer(): Promise<void> {
 
         server.listen(port, () => {
             console.log(`🚀 Server running on port ${port}`);
-            console.log(`🌐 Web interface is available at http://localhost:${port}`);
+            console.log(
+                `🌐 Web interface is available at http://localhost:${port}`
+            );
         });
 
         process.on("SIGTERM", () => {

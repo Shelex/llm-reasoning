@@ -6,7 +6,7 @@ export class ResponseParser {
         return ResponseFilter.filterThinkBlocks(content);
     }
 
-    static parseDecomposition(content: string): { subTasks: SubTask[] } {
+    static parseDecomposition(content: string): { plan: SubTask[] } {
         const jsonResult = this.tryParseJSON(content);
         if (jsonResult) {
             return jsonResult;
@@ -17,11 +17,16 @@ export class ResponseParser {
             return markdownResult;
         }
 
+        const regexResult = this.tryRegexExtraction(content);
+        if (regexResult) {
+            return regexResult;
+        }
+
         console.log(
             `No valid JSON found in content: ${content}, returning complete response`
         );
         return {
-            subTasks: [
+            plan: [
                 {
                     id: "1",
                     query: content.trim(),
@@ -31,31 +36,66 @@ export class ResponseParser {
         };
     }
 
-    private static tryParseJSON(
-        content: string
-    ): { subTasks: SubTask[] } | null {
+    private static tryParseJSON(content: string): { plan: SubTask[] } | null {
         try {
             const parsed = JSON.parse(content);
-            if (!parsed.subTasks || !Array.isArray(parsed.subTasks)) {
+            if (!parsed.plan || !Array.isArray(parsed.plan)) {
                 return null;
             }
 
-            return {
-                subTasks: parsed.subTasks.map((task: any, index: number) => ({
+            const validSubTasks = parsed.plan
+                .filter(
+                    (task: any) =>
+                        task && typeof task === "object" && task.query
+                )
+                .map((task: any, index: number) => ({
                     id: task.id ?? String(index + 1),
                     query: this.extractCleanQuery(task.query),
                     status: "pending" as const,
-                })),
-            };
+                }));
+
+            if (validSubTasks.length === 0) {
+                return null;
+            }
+
+            return { plan: validSubTasks };
         } catch (error) {
             console.error("failed to parse JSON:", error);
+            return this.tryParseJSONFallback(content);
+        }
+    }
+
+    private static tryParseJSONFallback(
+        content: string
+    ): { plan: SubTask[] } | null {
+        try {
+            const cleanContent = content
+                .replace(/,\s*}/g, "}")
+                .replace(/,\s*]/g, "]")
+                .replace(/([{,]\s*)(\w+):/g, '$1"$2":')
+                .replace(/:\s*'([^']*)'/g, ': "$1"');
+
+            const parsed = JSON.parse(cleanContent);
+            if (parsed.plan && Array.isArray(parsed.plan)) {
+                return {
+                    plan: parsed.plan
+                        .filter((task: any) => task?.query)
+                        .map((task: any, index: number) => ({
+                            id: task.id ?? String(index + 1),
+                            query: this.extractCleanQuery(task.query),
+                            status: "pending" as const,
+                        })),
+                };
+            }
+        } catch (fallbackError) {
+            console.warn("JSON fallback parsing also failed:", fallbackError);
         }
         return null;
     }
 
     private static tryParseMarkdownJSON(
         content: string
-    ): { subTasks: SubTask[] } | null {
+    ): { plan: SubTask[] } | null {
         const jsonRegex = new RegExp(
             "```(?:json)?\\s*(\\{[\\s\\S]*?\\})\\s*```"
         );
@@ -64,6 +104,38 @@ export class ResponseParser {
             return this.tryParseJSON(jsonMatch[1]);
         }
         return null;
+    }
+
+    private static tryRegexExtraction(
+        content: string
+    ): { plan: SubTask[] } | null {
+        const jsonObjectRegex = /\{[^{}]*"plan"[^{}]*\[[^\]]*\][^{}]*\}/gs;
+        const matches = content.match(jsonObjectRegex);
+
+        if (matches) {
+            for (const match of matches) {
+                const result = this.tryParseJSON(match);
+                if (result) {
+                    return result;
+                }
+            }
+        }
+
+        const taskRegex = /"id":\s*"([^"]+)",?\s*"query":\s*"([^"]+)"/g;
+        const tasks: SubTask[] = [];
+        let match;
+
+        while ((match = taskRegex.exec(content)) !== null) {
+            const [, id, query] = match;
+
+            tasks.push({
+                id,
+                query,
+                status: "pending" as const,
+            });
+        }
+
+        return tasks.length > 0 ? { plan: tasks } : null;
     }
 
     static parseStrategySelection(content: string): ReasoningStrategy {
@@ -105,11 +177,11 @@ export class ResponseParser {
             try {
                 const parsed = JSON.parse(clean);
                 if (
-                    parsed.subTasks &&
-                    Array.isArray(parsed.subTasks) &&
-                    parsed.subTasks.length > 0
+                    parsed.plan &&
+                    Array.isArray(parsed.plan) &&
+                    parsed.plan.length > 0
                 ) {
-                    return parsed.subTasks[0].query ?? clean.trim();
+                    return parsed.plan?.at(0)?.query ?? clean.trim();
                 }
             } catch (error) {
                 console.error("failed to parse query JSON:", error);

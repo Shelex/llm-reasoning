@@ -1,11 +1,12 @@
 import { Router, Request, Response } from "express";
 import { ChatService } from "../services/chat";
-import { OrchestratorService } from "../services/orchestrator";
-import { LLMClient, QueryRequest } from "../types";
+import { Planner } from "../services/planner";
+import { QueryRequest } from "../types";
+import { LLMClient } from "../services/llm/client";
 
 export function createRoutes(
     chatService: ChatService,
-    orchestratorService: OrchestratorService,
+    planner: Planner,
     llmClient: LLMClient
 ): Router {
     const router = Router();
@@ -51,10 +52,7 @@ export function createRoutes(
             let response: string;
 
             if (reason) {
-                const result = await orchestratorService.processQuery(
-                    chatId,
-                    query
-                );
+                const result = await planner.processQuery(chatId, query);
                 response = result.response;
             } else {
                 console.log(

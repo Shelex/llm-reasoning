@@ -4,12 +4,13 @@ export { SkeletonOfThoughtStrategy } from "./skeleton-of-thought";
 export { ConstrainedChainOfThoughtStrategy } from "./constrained-chain-of-thought";
 export { GraphOfThoughtsStrategy } from "./graph-of-thoughts";
 
-import { LLMClient, ReasoningStrategy } from "../../types";
+import { ReasoningStrategy } from "../../types";
 import { ReasoningExecutor } from "../types";
 import { ChainOfThoughtStrategy } from "./chain-of-thought";
 import { SkeletonOfThoughtStrategy } from "./skeleton-of-thought";
 import { ConstrainedChainOfThoughtStrategy } from "./constrained-chain-of-thought";
 import { GraphOfThoughtsStrategy } from "./graph-of-thoughts";
+import { LLMClient } from "../../services/llm/client";
 
 export class StrategyFactory {
     private readonly strategies: Map<string, ReasoningExecutor>;

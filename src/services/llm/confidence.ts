@@ -1,4 +1,4 @@
-import { LLMClient } from "../types";
+import { LLMClient } from "./client";
 
 export class ConfidenceCalculator {
     constructor(private readonly llmClient: LLMClient) {}
@@ -20,12 +20,14 @@ Consider:
 
 Respond with only a number (e.g., 0.85)`;
 
-            const response = await this.llmClient.queryLLMRaw(
+            const response = await this.llmClient.queryLLM(
                 confidencePrompt,
-                0.05
+                0.05,
+                undefined,
+                "confidence_calculation"
             );
-            const confidenceText =
-                response.data.choices[0]?.message?.content || "";
+
+            const confidenceText = response.content || "";
             const confidenceScore = parseFloat(confidenceText.trim());
 
             if (isNaN(confidenceScore)) {

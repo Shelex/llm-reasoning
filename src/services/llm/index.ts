@@ -1,20 +1,22 @@
-import { LLMClient } from "../../types";
-import { LMStudioClient } from "./llm-studio";
-import { OpenRouterClient } from "./openrouter";
+import { LLMClient, LLMConfig } from "./client";
 
 export function createLLMClient(): LLMClient {
     const provider = process.env.LLM_PROVIDER ?? "lmstudio";
 
     if (provider === "lmstudio") {
-        console.log("Using LM Studio as LLM provider");
-        return new LMStudioClient(process.env.LM_STUDIO_URL);
+        const config: LLMConfig = {
+            provider: "lmstudio",
+            baseURL: process.env.LM_STUDIO_URL ?? "http://localhost:1234/v1",
+            model: process.env.LM_STUDIO_MODEL ?? "local-model",
+        };
+
+        return new LLMClient(config);
     }
 
     if (provider === "openrouter") {
-        console.log("Using OpenRouter as LLM provider");
         const defaultModel = "deepseek/deepseek-chat-v3-0324:free";
         const apiKey = process.env.OPENROUTER_API_KEY;
-        const model = process.env.OPENROUTER_MODEL;
+        const model = process.env.OPENROUTER_MODEL ?? defaultModel;
 
         if (!apiKey) {
             throw new Error(
@@ -22,13 +24,14 @@ export function createLLMClient(): LLMClient {
             );
         }
 
-        if (!model) {
-            console.warn(
-                `OPENROUTER_MODEL not set, defaulting to '${defaultModel}'`
-            );
-        }
+        const config: LLMConfig = {
+            provider: "openrouter",
+            baseURL: "https://openrouter.ai/api/v1",
+            apiKey,
+            model,
+        };
 
-        return new OpenRouterClient(apiKey, model ?? defaultModel);
+        return new LLMClient(config);
     }
 
     throw new Error(
