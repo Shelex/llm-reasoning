@@ -211,25 +211,29 @@ export class Planner extends EventEmitter {
             ragContextSummary,
             previousResults
         );
+        const fullContextSummary = await this.summarizeContext(
+            state.chatId,
+            fullContext
+        );
 
         console.log(
             `[EXECUTOR] Context for subtask ${
                 currentTask.id
             }: Previous results: ${
                 previousResults ? "Yes" : "No"
-            }, RAG context: ${ragContextSummary ? "Yes" : "No"}`
+            }, RAG context: ${fullContextSummary ? "Yes" : "No"}`
         );
 
         this.emitEvent(state.chatId, "context_retrieve", {
             subTask: currentTask.id,
             hasPreviousResults: !!previousResults,
-            hasRAGContext: !!ragContextSummary,
-            contextLength: fullContext.length,
+            hasRAGContext: !!fullContextSummary,
+            contextLength: fullContextSummary.length,
         });
 
         const result = await this.executeReasoningStrategy(
             currentTask.query,
-            fullContext,
+            fullContextSummary,
             strategy,
             state.chatId
         );
@@ -268,7 +272,7 @@ export class Planner extends EventEmitter {
             confidence: state.confidence,
         });
 
-        if (state.confidence < 0.6 && state.retryCount < 3) {
+        if (state.confidence <= 0.6 && state.retryCount < 3) {
             console.log(`[CRITIC] Low confidence detected, preparing retry`);
             return { retryCount: state.retryCount + 1 };
         }
@@ -425,6 +429,21 @@ Consider the complexity, required accuracy, and nature of the question.`;
         }
 
         return `# Context Information\n\n${contexts.join("\n\n")}`;
+    }
+
+    async summarizeContext(chatId: string, ctx: string) {
+        if (!ctx) {
+            return "";
+        }
+
+        const summary = await this.llmClient.queryLLM(
+            `Summarize the following context:\n\n${ctx}`,
+            0.3,
+            chatId,
+            "context_summary"
+        );
+
+        return summary.content.trim();
     }
 
     private emitEvent(
