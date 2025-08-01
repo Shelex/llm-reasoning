@@ -10,7 +10,7 @@ import { ChainOfThoughtStrategy } from "./chain-of-thought";
 import { SkeletonOfThoughtStrategy } from "./skeleton-of-thought";
 import { ConstrainedChainOfThoughtStrategy } from "./constrained-chain-of-thought";
 import { GraphOfThoughtsStrategy } from "./graph-of-thoughts";
-import { LLMClient } from "../../services/llm/client";
+import { LLMClient } from "../../services/llm";
 
 export class StrategyFactory {
     private readonly strategies: Map<string, ReasoningExecutor>;

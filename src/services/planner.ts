@@ -1,19 +1,16 @@
 import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
 import { SubTask, ReasoningStrategy, ChatEvent } from "../types";
-import { StrategyFactory, ResponseParser } from "../reasoning";
+import { StrategyFactory } from "../reasoning";
 import { RAGService } from "./rag";
 import { EventEmitter } from "events";
 import { AnswerBeautifier } from "../quality";
 import { LLMClient } from "./llm/client";
-
-const decompositionSample = `
-    {
-     "plan": [
-       { "id": "task_1", "query": "..." },
-       { "id": "task_2", "query": "..." }
-     ]
-   }
-`;
+import {
+    TaskDecompositionSchema,
+    TaskDecompositionResponse,
+    ReasoningStrategySchema,
+    ReasoningStrategyResponse,
+} from "../schemas";
 
 export interface GraphState {
     chatId: string;
@@ -106,7 +103,7 @@ export class Planner extends EventEmitter {
 
     private async plannerNode(state: any): Promise<any> {
         console.log(
-            `[MAP PLANNER] Using Model-as-Planner for query: ${state.query}`
+            `[PLANNER] Using Model-as-Planner for query: ${state.query}`
         );
         this.emitEvent(state.chatId, "thinking", {
             stage: "map_planning",
@@ -114,88 +111,68 @@ export class Planner extends EventEmitter {
         });
 
         const plannerPrompt = this.buildMAPlannerPrompt(state.query);
-        const planResponse = await this.llmClient.queryLLM(
-            plannerPrompt,
-            0.7,
-            state.chatId,
-            "map_planning"
-        );
-
-        const initialPlan = this.parseDecomposition(planResponse.content);
-
-        this.emitEvent(state.chatId, "thinking", {
-            stage: "map_refinement",
-            query: state.query,
-        });
-
-        const refined = await this.refinePlan(
-            state.query,
-            initialPlan,
-            state.chatId
-        );
-
-        console.log(
-            `[MAP PLANNER] Generated ${refined.plan.length} refined planned subtasks`
-        );
-
-        await this.ragService.addContext(
-            state.chatId,
-            `Original query: ${state.query}`
-        );
-        await this.ragService.addContext(
-            state.chatId,
-            `Plan: ${JSON.stringify(refined.plan)}`
-        );
-
-        return {
-            plan: refined.plan,
-            currentSubTaskIndex: 0,
-        };
-    }
-
-    private async refinePlan(
-        originalQuery: string,
-        initialPlan: { plan: SubTask[] },
-        chatId: string
-    ): Promise<{ plan: SubTask[] }> {
-        const refinePrompt = `
-You are a planning critic. Review this task decomposition and improve it.
-
-Original Query: ${originalQuery}
-
-Initial Plan:
-${initialPlan.plan.map((t, i) => `${i + 1}. ${t.query}`).join("\n")}
-
-Provide a refined plan that:
-1. Ensures that output is a valid JSON object and matches the example format:
-${decompositionSample}
-2. Ensures logical ordering of subtasks
-3. Removes redundant or unnecessary steps
-4. Adds missing critical steps
-5. Ensures each subtask is specific and actionable
-
-Return the refined plan in the valid JSON format.
-    `;
-
-        const refineResponse = await this.llmClient.queryLLM(
-            refinePrompt,
-            0.3,
-            chatId,
-            "plan_refinement"
-        );
 
         try {
-            const refined = this.parseDecomposition(refineResponse.content);
-            console.log(
-                `[MAP PLANNER] Plan refined: ${initialPlan.plan.length} → ${refined.plan.length} planned subtasks`
+            const { data: decomposition } =
+                await this.llmClient.queryLLMWithSchema<TaskDecompositionResponse>(
+                    plannerPrompt,
+                    TaskDecompositionSchema,
+                    0.7,
+                    state.chatId,
+                    "map_planning"
+                );
+
+            const plan: SubTask[] = decomposition.plan.map(
+                (
+                    task: {
+                        id: string;
+                        task: string;
+                    },
+                    index: number
+                ) => ({
+                    id: task?.id ?? String(index + 1),
+                    query: task.task,
+                    status: "pending",
+                })
             );
-            return refined;
+
+            this.emitEvent(state.chatId, "thinking", {
+                stage: "map_planning_complete",
+                plan,
+            });
+
+            console.log(
+                `[MAP PLANNER] Generated ${plan.length} planned subtasks`
+            );
+
+            await this.ragService.addContext(
+                state.chatId,
+                `Original query: ${state.query}`
+            );
+            await this.ragService.addContext(
+                state.chatId,
+                `Plan: ${JSON.stringify(plan)}`
+            );
+
+            return {
+                plan,
+                currentSubTaskIndex: 0,
+            };
         } catch (error) {
             console.warn(
-                `[MAP PLANNER] Plan refinement failed, using initial plan:`,
+                `[MAP PLANNER] Plan refinement failed, using fallback:`,
                 error
             );
-            return initialPlan;
+
+            return {
+                plan: [
+                    {
+                        id: "1",
+                        query: state.query,
+                    },
+                ],
+                currentSubTaskIndex: 0,
+            };
         }
     }
 
@@ -338,13 +315,25 @@ Return the refined plan in the valid JSON format.
         chatId: string
     ): Promise<ReasoningStrategy> {
         const prompt = this.buildStrategySelectionPrompt(query);
-        const response = await this.llmClient.queryLLM(
-            prompt,
-            0.7,
-            chatId,
-            "strategy_selection"
-        );
-        return this.parseStrategySelection(response.content);
+
+        try {
+            const { data: strategyData } =
+                await this.llmClient.queryLLMWithSchema<ReasoningStrategyResponse>(
+                    prompt,
+                    ReasoningStrategySchema,
+                    0.7,
+                    chatId,
+                    "strategy_selection"
+                );
+
+            return {
+                name: strategyData.selected_strategy,
+                parameters: { reasoning: strategyData.explanation },
+            };
+        } catch (error) {
+            console.warn("Structured strategy selection failed:", error);
+            return { name: "chain_of_thought", parameters: {} };
+        }
     }
 
     private async executeReasoningStrategy(
@@ -359,49 +348,31 @@ Return the refined plan in the valid JSON format.
         return await executor.execute(query, context, chatId);
     }
 
-    private buildMAPlannerPrompt(query: string) {
+    private buildMAPlannerPrompt(query: string): string {
         return `
-You are a Model-as-Planner (MAP) agent. Break the user query into plan with atomic subtasks.
+You are a Model-as-Planner (MAP) agent. Break down the user query into atomic subtasks.
 
 USER_QUERY:
 ${query}
 
---- OUTPUT RULES ---
-1. JSON example:
-   ${decompositionSample}
-2. Respond with **valid JSON** only that matches JSON example.
-4. Do not wrap the JSON in code fences.
-5. Do not write explanations, comments, or additional keys.
-6. Reply **ONLY** with the JSON object, no other text.
-7. "plan" should be an array of subtasks.
-8. Each subtask should have a unique "id" and a "query", no other fields allowed.
+Create a structured plan with atomic subtasks. Each subtask should:
+1. Be specific and actionable
+2. Have a unique ID
+3. Contribute to answering the original query
 
-BEGIN STRUCTURED JSON BELOW:
-`;
+The plan should be logically ordered and comprehensive.`;
     }
 
     private buildStrategySelectionPrompt(query: string): string {
         return `Select the best reasoning strategy for this question: "${query}"
 
-Strategies:
-1. chain_of_thought - Simple factual questions
-2. skeleton_of_thought - Multi-part questions
-3. constrained_chain_of_thought - Critical accuracy needed
-4. graph_of_thoughts - Complex interconnected facts
+Available strategies:
+1. chain_of_thought - Simple factual questions, straightforward reasoning
+2. skeleton_of_thought - Multi-part questions that benefit from outlining first
+3. constrained_chain_of_thought - Questions where critical accuracy is needed
+4. graph_of_thoughts - Complex interconnected facts that require exploring relationships
 
-Respond with JSON:
-{
-  "strategy": "chain_of_thought",
-  "reasoning": "Brief explanation"
-}`;
-    }
-
-    private parseDecomposition(content: string): { plan: SubTask[] } {
-        return ResponseParser.parseDecomposition(content);
-    }
-
-    private parseStrategySelection(content: string): ReasoningStrategy {
-        return ResponseParser.parseStrategySelection(content);
+Consider the complexity, required accuracy, and nature of the question.`;
     }
 
     private buildPreviousSubtasksContext(state: any): string {

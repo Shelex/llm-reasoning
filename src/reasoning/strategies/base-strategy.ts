@@ -1,4 +1,4 @@
-import { LLMClient } from "../../services/llm/client";
+import { LLMClient } from "../../services/llm";
 import { ReasoningResult, ReasoningExecutor } from "../types";
 
 export abstract class BaseReasoningStrategy implements ReasoningExecutor {

@@ -11,13 +11,12 @@ This abomination of code takes your innocent little questions and puts them thro
 Ok, if seriously:
 
 -   **MAP Planner**: Decomposes queries into atomic subtasks using Model-as-Planner paradigm
--   **LangGraph Orchestration**: Stateful graph execution with checkpoints and resumable runs
+-   **LangGraph Orchestration**: Stateful graph execution
 -   **Subtask Chaining**: Each subtask builds upon previous results for coherent reasoning
 -   **RAG**: Qdrant vector database with hybrid search (BM25 + vector) and ColBERT reranking, subtasks context population
--   **Document Chunking**: Text splitting with LangChain for better retrieval
 -   **Strategy Selection**: Adaptive reasoning (so-called) (CoT, SoT, GoT, CCoT) per subtask
--   **Self-Refine**: Continuous improvement through critic feedback loops
--   **LLM Client**: Works with both local LM Studio and OpenRouter via OpenAI-compatible API
+-   **Self-Refine**: Continuous improvement through critic feedback loops measuring confidence
+-   **LLM Client**: Works with both local LM Studio and OpenRouter via OpenAI-compatible API and Vercel AI SDK
 
 ## Architecture Overview
 
@@ -76,6 +75,19 @@ Subtask 3: ┌─────────┐ ──▶ Result 3
            │ Context │ ◀── Result 1 + Result 2 + RAG Context
            └─────────┘
 ```
+
+### Structured Output
+
+That's just hilarious, but to make llm respond in JSON format it is not enough to just ask it to do so. I've been there, done that, prompted all the way to the understanding that asking, begging and threatening llm to answer in json will not work.
+
+-   you need a model that actually CAN handle structured output
+    -   you can pay for openai api (not recommended, do not give altman your money)
+    -   you can pay for anthropic api (better than openai, at least they are not ruled by insane people)
+    -   you can use local models (like llama v3+, qwen, gemma, mistral, deepseek V3 - but not R1) that are capable of json output (for some degree, most of the time, when you are lucky)
+-   you need to provide a schema and then ask it to follow the schema. (you'd better ask properly, vercel sdk has so many versions, that when you found that special one that works - that's probably the one you will use till death)
+-   even when you found your perfect model and provided your SUPER STRICT STRUCTURE (that's like Big Beautiful Bill, but even more crazy) it still might not work as expected.
+
+But at least it could work, maybe with commercial models that could be even more reliable (hue-hue-hue, aha, yes).
 
 ## Example Usage
 
@@ -136,17 +148,16 @@ npm run dev
 #### LM Studio Setup
 
 ```env
-LLM_PROVIDER=lmstudio
-LM_STUDIO_URL=http://localhost:1234/v1
-LM_STUDIO_MODEL=local-model
+LLM_BASE_URL=http://localhost:1234/v1
+LLM_MODEL=local-model
 ```
 
 #### OpenRouter Setup
 
 ```env
-LLM_PROVIDER=openrouter
-OPENROUTER_API_KEY=<your_api_key_here>
-OPENROUTER_MODEL=deepseek/deepseek-chat-v3-0324:free
+LLM_BASE_URL=https://api.openrouter.ai/v1
+LLM_API_KEY="<your_openrouter_api_key_here>"
+LLM_MODEL=deepseek/deepseek-chat-v3-0324:free
 ```
 
 ## Reasoning Strategies

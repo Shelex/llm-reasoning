@@ -1,5 +1,4 @@
-import { LLMClient } from "../services/llm/client";
-import { ResponseFilter } from "../utils/response-filter";
+import { LLMClient } from "../services/llm";
 
 export class AnswerBeautifier {
     constructor(private readonly llmClient: LLMClient) {}
@@ -30,6 +29,6 @@ Write your answer below:`;
             chatId,
             "beautify"
         );
-        return ResponseFilter.filterThinkBlocks(response.content);
+        return response.content;
     }
 }

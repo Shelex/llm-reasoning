@@ -8,6 +8,9 @@ import { ChatService } from "./services/chat";
 import { WebSocketService } from "./services/websocket";
 import { createRoutes } from "./api/routes";
 import { errorHandler, notFoundHandler } from "./utils/error-handler";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 async function startServer(): Promise<void> {
     try {

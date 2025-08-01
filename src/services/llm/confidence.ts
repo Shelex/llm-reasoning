@@ -1,4 +1,5 @@
 import { LLMClient } from "./client";
+import { ConfidenceSchema, ConfidenceAssessmentResponse } from "../../schemas";
 
 export class ConfidenceCalculator {
     constructor(private readonly llmClient: LLMClient) {}
@@ -7,7 +8,20 @@ export class ConfidenceCalculator {
         if (!content || content.trim().length === 0) return 0;
 
         try {
-            const confidencePrompt = `Rate the confidence level of this response from 0.0 to 1.0:
+            return await this.calculateWithStructuredOutput(content);
+        } catch (error) {
+            console.warn(
+                "Failed to calculate confidence with LLM, using fallback:",
+                error
+            );
+            return 0;
+        }
+    }
+
+    private async calculateWithStructuredOutput(
+        content: string
+    ): Promise<number> {
+        const confidencePrompt = `Rate the confidence level of this response from 0.0 to 1.0:
 
 "${content}"
 
@@ -16,67 +30,41 @@ Consider:
 - Certainty of language used
 - Completeness of answer
 - Presence of uncertainty words
-- Do not specify the reasoning process, just provide a confidence score.
 
-Respond with only a number (e.g., 0.85)`;
+Provide a confidence score between 0.0 and 1.0.
 
-            const response = await this.llmClient.queryLLM(
-                confidencePrompt,
-                0.05,
-                undefined,
-                "confidence_calculation"
-            );
-
-            const confidenceText = response.content || "";
-            const confidenceScore = parseFloat(confidenceText.trim());
-
-            if (isNaN(confidenceScore)) {
-                return this.fallbackCalculation(content);
-            }
-
-            return Math.max(0, Math.min(1, confidenceScore));
-        } catch (error) {
-            console.warn(
-                "Failed to calculate confidence with LLM, using fallback:",
-                error
-            );
-            return this.fallbackCalculation(content);
-        }
+Example response format:
+{
+  "confidence_score": 0.8,
+  "reasoning": {
+    "factual_accuracy": 1.0,
+    "certainty_of_language": 1.0,
+    "completeness_of_answer": 1.0,
+    "presence_of_uncertainty_words": 0.0,
+    "breakdown": {
+      "factual_accuracy": "why this is accurate",
+      "certainty_of_language": "how confident the language is",
+      "completeness_of_answer": "how complete the answer is",
+      "presence_of_uncertainty_words": "are there words indicating uncertainty"
     }
+  }
+}
+`;
 
-    private fallbackCalculation(content: string): number {
-        if (!content || content.trim().length === 0) return 0;
+        try {
+            const { data } =
+                await this.llmClient.queryLLMWithSchema<ConfidenceAssessmentResponse>(
+                    confidencePrompt,
+                    ConfidenceSchema,
+                    0.05,
+                    undefined,
+                    "confidence_calculation"
+                );
 
-        const uncertainPhrases = [
-            "i think",
-            "maybe",
-            "perhaps",
-            "possibly",
-            "might",
-            "could be",
-            "i'm not sure",
-            "unclear",
-            "uncertain",
-            "probably",
-            "i don't know",
-        ];
-
-        const lowerContent = content.toLowerCase();
-        const uncertaintyCount = uncertainPhrases.reduce((count, phrase) => {
-            return count + (lowerContent.includes(phrase) ? 1 : 0);
-        }, 0);
-
-        let confidence = 0.7;
-        confidence -= uncertaintyCount * 0.15;
-
-        if (
-            lowerContent.includes("is") ||
-            lowerContent.includes("are") ||
-            (lowerContent.includes("the") && !lowerContent.includes("might"))
-        ) {
-            confidence += 0.1;
+            return Math.max(0, Math.min(1, data.confidence_score));
+        } catch (error) {
+            console.warn("Structured confidence calculation failed:", error);
+            return 0;
         }
-
-        return Math.max(0.1, Math.min(1, confidence));
     }
 }
