@@ -24,6 +24,7 @@ Core facts only (universally accepted, not subject to debate):`;
         const crossRefPrompt = `Cross-reference these facts against common knowledge for consistency.
 
 Facts: ${primaryResponse.content}
+${context ? `Context: ${context}` : ""}
 
 Consistency check and any issues found:`;
 
@@ -38,6 +39,7 @@ Consistency check and any issues found:`;
 
 Facts: ${primaryResponse.content}
 Consistency: ${crossRefResponse.content}
+${context ? `Context: ${context}` : ""}
 
 Multi-source verification assessment:`;
 
@@ -52,6 +54,7 @@ Multi-source verification assessment:`;
 
 Question: "${query}"
 Verified facts: ${multiSourceResponse.content}
+${context ? `Context: ${context}` : ""}
 
 Thoroughly verified answer:`;
 

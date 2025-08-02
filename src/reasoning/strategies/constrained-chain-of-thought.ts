@@ -25,6 +25,7 @@ Critical accuracy constraints and requirements:`;
 
 Question: "${query}"
 Accuracy constraints: ${constraintResponse.content}
+${context ? `Context: ${context}` : ""}
 
 List only facts you are absolutely certain about:`;
 
@@ -39,6 +40,7 @@ List only facts you are absolutely certain about:`;
 
 Question: "${query}"
 Verified facts: ${verificationResponse.content}
+${context ? `Context: ${context}` : ""}
 
 Precise answer using only verified facts:`;
 

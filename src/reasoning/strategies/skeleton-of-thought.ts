@@ -24,6 +24,7 @@ Information type and main components:`;
         const categoriesPrompt = `Break down into factual categories based on this analysis.
 
 Analysis: ${analysisResponse.content}
+${context ? `Context: ${context}` : ""}
 
 List clear, distinct fact categories:`;
 
@@ -38,6 +39,7 @@ List clear, distinct fact categories:`;
 
 Question: "${query}"
 Fact categories: ${categoriesResponse.content}
+${context ? `Context: ${context}` : ""}
 
 Structured answer addressing each category:`;
 

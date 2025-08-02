@@ -24,6 +24,7 @@ List the key facts required for a complete answer:`;
         const knowledgeCheckPrompt = `Which of these facts do you know with high certainty?
 
 Required facts: ${factIdResponse.content}
+${context ? `Context: ${context}` : ""}
 
 List only facts you're confident about. If uncertain, say so:`;
 
@@ -38,6 +39,7 @@ List only facts you're confident about. If uncertain, say so:`;
 
 Question: "${query}"
 Verified facts: ${knowledgeResponse.content}
+${context ? `Context: ${context}` : ""}
 
 Provide a clear, complete answer using only these facts. If facts are insufficient, acknowledge what's missing:`;
 
