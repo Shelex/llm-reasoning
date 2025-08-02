@@ -364,7 +364,9 @@ Create a structured plan with atomic subtasks. Each subtask should:
 2. Have a unique ID
 3. Contribute to answering the original query
 
-The plan should be logically ordered and comprehensive.`;
+The plan should be logically ordered and comprehensive.
+Plan should match the json schema.
+`;
     }
 
     private buildStrategySelectionPrompt(query: string): string {
@@ -376,7 +378,9 @@ Available strategies:
 3. constrained_chain_of_thought - Questions where critical accuracy is needed
 4. graph_of_thoughts - Complex interconnected facts that require exploring relationships
 
-Consider the complexity, required accuracy, and nature of the question.`;
+Consider the complexity, required accuracy, and nature of the question.
+Plan should match the json schema.
+`;
     }
 
     private buildPreviousSubtasksContext(state: any): string {
