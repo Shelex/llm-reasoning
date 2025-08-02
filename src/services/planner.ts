@@ -117,7 +117,7 @@ export class Planner extends EventEmitter {
                 await this.llmClient.queryLLMWithSchema<TaskDecompositionResponse>(
                     plannerPrompt,
                     TaskDecompositionSchema,
-                    0.7,
+                    0.8,
                     state.chatId,
                     "map_planning"
                 );
@@ -257,12 +257,11 @@ export class Planner extends EventEmitter {
         return {
             results: [result.result],
             confidence: result.confidence,
-            currentSubTaskIndex: state.currentSubTaskIndex + 1,
         };
     }
 
     private async criticNode(state: any): Promise<any> {
-        const currentTask = state.plan[state.currentSubTaskIndex - 1];
+        const currentTask = state.plan[state.currentSubTaskIndex];
         console.log(
             `[CRITIC] Reviewing subtask ${currentTask.id} with confidence ${state.confidence}`
         );
@@ -272,12 +271,15 @@ export class Planner extends EventEmitter {
             confidence: state.confidence,
         });
 
-        if (state.confidence <= 0.6 && state.retryCount < 3) {
+        if (state.confidence < 0.8 && state.retryCount < 2) {
             console.log(`[CRITIC] Low confidence detected, preparing retry`);
-            return { retryCount: state.retryCount + 1 };
+            return {
+                retryCount: state.retryCount + 1,
+                results: state.results.slice(0, -1),
+            };
         }
 
-        return {};
+        return { currentSubTaskIndex: state.currentSubTaskIndex + 1 };
     }
 
     private async synthesizerNode(state: any): Promise<any> {
@@ -308,7 +310,7 @@ export class Planner extends EventEmitter {
     }
 
     private shouldRetry(state: any): string {
-        if (state.confidence < 0.6 && state.retryCount < 3) {
+        if (state.confidence < 0.8 && state.retryCount < 2) {
             return "executor";
         }
         return "synthesizer";
@@ -325,7 +327,7 @@ export class Planner extends EventEmitter {
                 await this.llmClient.queryLLMWithSchema<ReasoningStrategyResponse>(
                     prompt,
                     ReasoningStrategySchema,
-                    0.7,
+                    1.0,
                     chatId,
                     "strategy_selection"
                 );
