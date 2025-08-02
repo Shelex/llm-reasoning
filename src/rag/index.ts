@@ -1,5 +1,5 @@
 export { RAGModule, createRAGModule } from "./rag";
-export { LMStudioEmbeddings } from "./embeddings";
+export { createEmbeddings } from "./embeddings";
 export * from "./types";
 
 export { Document } from "@langchain/core/documents";

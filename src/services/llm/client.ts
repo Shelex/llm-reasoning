@@ -18,8 +18,6 @@ export class LLMClient {
     private readonly apiKey: string;
 
     constructor(config: LLMConfig) {
-        console.log(config);
-
         this.apiKey = config.apiKey || "dummy-key-for-lm-studio";
 
         process.env.OPENAI_API_KEY = this.apiKey;
@@ -55,6 +53,7 @@ export class LLMClient {
         stage?: string
     ): Promise<LLMResponse> {
         try {
+            console.log(`[LLMClient] Querying LLM with prompt: "${prompt.substring(0, 50)}..."`);
             const model = this.createModelInstance({ temperature });
 
             const response = await model.invoke([
@@ -102,6 +101,7 @@ export class LLMClient {
                 });
             }
 
+            console.log(`[LLMClient] Got result for prompt: "${prompt.substring(0, 50)}..."`);
             return llmResponse;
         } catch (error) {
             console.error(`${this.config.name} API error:`, error);

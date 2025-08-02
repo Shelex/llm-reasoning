@@ -1,32 +1,25 @@
 import { Document } from "@langchain/core/documents";
-import { QdrantVectorStore } from "@langchain/qdrant";
-import { QdrantClient } from "@qdrant/js-client-rest";
+import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import BM25 from "okapibm25";
-import axios from "axios";
+import { reciprocalRankFusion } from "rerank";
 import {
     RagConfig,
     ChatContext,
     RelevantContext,
-    ColBERTRerankResponse,
     HybridSearchResult,
 } from "./types";
-import { LMStudioEmbeddings } from "./embeddings";
+import { createEmbeddings } from "./embeddings";
 
 export class RAGModule {
     private config: RagConfig;
-    private vectorStore!: QdrantVectorStore;
+    private vectorStores: Map<string, FaissStore> = new Map();
     private initialized: boolean = false;
-    private readonly qdrantClient: QdrantClient;
     private readonly chatContexts: Map<string, ChatContext> = new Map();
     private readonly textSplitter: RecursiveCharacterTextSplitter;
 
     constructor(config: RagConfig) {
         this.config = config;
-        this.qdrantClient = new QdrantClient({
-            url: config.qdrant.url,
-            apiKey: config.qdrant.apiKey,
-        });
 
         this.textSplitter = new RecursiveCharacterTextSplitter({
             chunkSize: config.chunking?.chunkSize ?? 1000,
@@ -35,30 +28,28 @@ export class RAGModule {
         });
     }
 
-    private async initializeVectorStore(): Promise<void> {
-        if (this.initialized) return;
-
-        this.vectorStore = await QdrantVectorStore.fromExistingCollection(
-            this.config.embeddings,
-            {
-                client: this.qdrantClient,
-                collectionName: this.config.qdrant.collectionName,
-            }
-        );
-
-        this.initialized = true;
+    private async getOrCreateVectorStore(chatId: string): Promise<FaissStore> {
+        let vectorStore = this.vectorStores.get(chatId);
+        
+        if (!vectorStore) {
+            vectorStore = new FaissStore(this.config.embeddings, {});
+            this.vectorStores.set(chatId, vectorStore);
+        }
+        
+        return vectorStore;
     }
 
     async clearContext(chatId: string): Promise<void> {
         this.chatContexts.delete(chatId);
+        this.vectorStores.delete(chatId);
     }
 
     async addContext(
         chatId: string,
         context: Document | Document[]
     ): Promise<void> {
-        await this.initializeVectorStore();
-
+        const vectorStore = await this.getOrCreateVectorStore(chatId);
+        
         const inputs = Array.isArray(context) ? context : [context];
 
         const documents: Document[] = [];
@@ -73,6 +64,7 @@ export class RAGModule {
                             chunkIndex: index,
                             totalChunks: chunks.length,
                             originalLength: input.pageContent.length,
+                            chatId: chatId,
                         },
                     })
             );
@@ -92,11 +84,7 @@ export class RAGModule {
         chatContext.documents.push(...documents);
         chatContext.lastUpdated = new Date();
 
-        await this.vectorStore.addDocuments(documents, {
-            customPayload: documents.map(() => ({
-                chatId: chatId,
-            })),
-        });
+        await vectorStore.addDocuments(documents);
     }
 
     async getRelevantContext(
@@ -107,7 +95,6 @@ export class RAGModule {
         console.log(
             `Retrieving relevant context for chatId: ${chatId}, query: "${query}", topK: ${topK}`
         );
-        await this.initializeVectorStore();
 
         const chatContext = this.chatContexts.get(chatId);
         if (!chatContext?.documents?.length) {
@@ -120,7 +107,7 @@ export class RAGModule {
             topK
         );
 
-        const finalResults = await this.rerankWithColBERT(
+        const finalResults = await this.rerankWithRRF(
             query,
             hybridResults,
             topK
@@ -194,20 +181,12 @@ export class RAGModule {
         query: string,
         topK: number
     ): Promise<{ document: Document; score: number }[]> {
-        const results = await this.vectorStore.similaritySearchWithScore(
-            query,
-            topK,
-            {
-                must: [
-                    {
-                        key: "chatId",
-                        match: {
-                            value: chatId,
-                        },
-                    },
-                ],
-            }
-        );
+        const vectorStore = this.vectorStores.get(chatId);
+        if (!vectorStore) {
+            return [];
+        }
+
+        const results = await vectorStore.similaritySearchWithScore(query, topK);
 
         return results.map(([document, score]) => ({
             document,
@@ -252,80 +231,50 @@ export class RAGModule {
             .slice(0, topK);
     }
 
-    private async rerankWithColBERT(
+    private async rerankWithRRF(
         query: string,
         hybridResults: HybridSearchResult[],
         topK: number
     ): Promise<RelevantContext[]> {
-        console.log(
-            `Reranking with ColBERT for query: "${query}", topK: ${topK}`
-        );
-        if (hybridResults.length === 0) {
+        console.log(`Reranking with RRF for query: "${query}", topK: ${topK}`);
+        if (!hybridResults.length) {
             return [];
         }
 
-        try {
-            const documents = hybridResults.map((r) => r.document.pageContent);
+        const documents = hybridResults.map((result) => ({
+            id: this.getDocumentId(result.document),
+            document: result.document,
+            originalResult: result,
+        }));
 
-            const response = await axios.post<ColBERTRerankResponse>(
-                this.config.colbert.apiUrl,
-                {
-                    model: this.config.colbert.modelName,
-                    input: {
-                        query,
-                        documents,
-                    },
-                },
-                {
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                }
-            );
+        const rankedIds = reciprocalRankFusion([documents], "id");
 
-            const rerankScores = response.data.scores;
+        const resultsMap = new Map<string, HybridSearchResult>();
+        hybridResults.forEach((result) => {
+            const docId = this.getDocumentId(result.document);
+            resultsMap.set(docId, result);
+        });
 
-            const rerankedResults = hybridResults
-                .map((result, index) => ({
-                    ...result,
-                    rerankScore: rerankScores?.[index] ?? 0,
-                }))
-                .sort((a, b) => (b.rerankScore ?? 0) - (a.rerankScore ?? 0))
-                .slice(0, topK);
-
-            return rerankedResults.map((result, index) => ({
-                document: result.document,
-                score: result.rerankScore || result.combinedScore,
-                retriever: "hybrid" as const,
-                metadata: {
-                    rank: index + 1,
-                    vectorScore: result.vectorScore,
-                    bm25Score: result.bm25Score,
-                    combinedScore: result.combinedScore,
-                    rerankScore: result.rerankScore,
-                },
-            }));
-        } catch (error) {
-            console.warn(
-                "ColBERT reranking failed, falling back to hybrid scores:",
-                error
-            );
-
-            return hybridResults
-                .sort((a, b) => b.combinedScore - a.combinedScore)
-                .slice(0, topK)
-                .map((result, index) => ({
-                    document: result.document,
-                    score: result.combinedScore,
+        const rerankedResults = Array.from(rankedIds.entries())
+            .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
+            .slice(0, topK)
+            .map(([docId, rrfScore], index) => {
+                const originalResult = resultsMap.get(docId)!;
+                return {
+                    document: originalResult.document,
+                    score: rrfScore,
                     retriever: "hybrid" as const,
                     metadata: {
                         rank: index + 1,
-                        vectorScore: result.vectorScore,
-                        bm25Score: result.bm25Score,
-                        combinedScore: result.combinedScore,
+                        vectorScore: originalResult.vectorScore,
+                        bm25Score: originalResult.bm25Score,
+                        combinedScore: originalResult.combinedScore,
+                        rrfScore: rrfScore,
                     },
-                }));
-        }
+                };
+            });
+
+        return rerankedResults;
     }
 
     private getDocumentId(document: Document): string {
@@ -417,6 +366,7 @@ export class RAGModule {
 
     async reset(): Promise<void> {
         this.chatContexts.clear();
+        this.vectorStores.clear();
         this.initialized = false;
     }
 
@@ -454,19 +404,11 @@ export class RAGModule {
 export function createRAGModule(config: Partial<RagConfig>): RAGModule {
     const defaultConfig: RagConfig = {
         lmStudioApiUrl: config.lmStudioApiUrl ?? "http://localhost:1234/v1",
-        qdrant: {
-            ...config.qdrant,
-            url: config.qdrant?.url ?? "http://localhost:6333",
-            collectionName: config.qdrant?.collectionName ?? "rag3_collection",
-            vectorSize: config.qdrant?.vectorSize ?? 1536,
-            distance: config.qdrant?.distance ?? "Cosine",
-        },
-        colbert: {
-            ...config.colbert,
-            modelName:
-                config.colbert?.modelName ?? "text-embedding-colbertv2.0",
-            apiUrl: config.colbert?.apiUrl ?? "http://localhost:1234/v1/rerank",
-            topK: config.colbert?.topK ?? 10,
+        faiss: {
+            ...config.faiss,
+            storagePath: config.faiss?.storagePath ?? "./faiss_storage",
+            autoSave: config.faiss?.autoSave ?? true,
+            saveInterval: config.faiss?.saveInterval ?? 300000,
         },
         bm25: {
             ...config.bm25,
@@ -484,7 +426,7 @@ export function createRAGModule(config: Partial<RagConfig>): RAGModule {
             chunkSize: config.chunking?.chunkSize ?? 1000,
             chunkOverlap: config.chunking?.chunkOverlap ?? 200,
         },
-        embeddings: new LMStudioEmbeddings({
+        embeddings: createEmbeddings({
             apiUrl: config.lmStudioApiUrl ?? "http://localhost:1234/v1",
             modelName: "text-embedding-nomic-embed-text-v1.5",
         }),

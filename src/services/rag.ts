@@ -5,7 +5,6 @@ import { Document } from "@langchain/core/documents";
 export interface RAGServiceConfig {
     topK: number;
     enableLogging: boolean;
-    qdrantUrl: string;
     collectionName: string;
     lmStudioApiUrl?: string;
 }
@@ -19,17 +18,12 @@ export class RAGService {
         this.config = {
             topK: 10,
             enableLogging: false,
-            qdrantUrl: "http://localhost:6333",
             collectionName: "rag_collection",
             lmStudioApiUrl: "http://localhost:1234/v1",
             ...config,
         };
 
         this.ragModule = createRAGModule({
-            qdrant: {
-                url: this.config.qdrantUrl,
-                collectionName: this.config.collectionName,
-            },
             lmStudioApiUrl: this.config.lmStudioApiUrl!,
         });
     }

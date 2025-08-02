@@ -3,4 +3,3 @@ node_modules
 
 chat-logs
 .env
-qdrant_storage

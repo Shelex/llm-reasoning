@@ -2,7 +2,7 @@
 
 **TL;DR**: A TypeScript-first, self-improving, graph-oriented reasoning system that transforms your local LLM into a PhD-level overthinker with existential crisis detection and automatic retry mechanisms.
 
-RAG approach contains hybrid retrieval via vector+bm25 search and colBERT reranking.
+RAG approach contains hybrid retrieval via vector+bm25 search and reranking.
 
 ## What This Cursed Thing Actually Does
 
@@ -13,7 +13,7 @@ Ok, if seriously:
 -   **MAP Planner**: Decomposes queries into atomic subtasks using Model-as-Planner paradigm
 -   **LangGraph Orchestration**: Stateful graph execution
 -   **Subtask Chaining**: Each subtask builds upon previous results for coherent reasoning
--   **RAG**: Qdrant vector database with hybrid search (BM25 + vector) and ColBERT reranking, subtasks context population
+-   **RAG**: FaissStore with hybrid search (BM25 + vector) and reranking, subtasks context population
 -   **Strategy Selection**: Adaptive reasoning (so-called) (CoT, SoT, GoT, CCoT) per subtask
 -   **Self-Refine**: Continuous improvement through critic feedback loops measuring confidence
 -   **LLM Client**: Works with both local LM Studio and OpenRouter via OpenAI-compatible API and Vercel AI SDK
@@ -40,8 +40,8 @@ Ok, if seriously:
 Query ──▶ [Hybrid Search] ──▶ [Self-Grader] ──▶ [Query Rewrite] ──▶ Results
             │                     │                    │
             ▼                     ▼                    ▼
-       BM25 + Vector         Confidence < 0.8?    Loop (max 3x)
-       ColBERT Rerank        Yes: Rewrite          Store Patterns
+       BM25 + Vector         Confidence < 0.8?    Loop (max 2x)
+          Rerank               Yes: Rewrite       Store Patterns
 ```
 
 ### What the heck is hybrid search in RAG?
@@ -59,6 +59,33 @@ More details:
 -   [arxiv | From Retrieval to Generation: Comparing Different Approaches](https://arxiv.org/abs/2502.20245)
 -   [arxiv | Deep Retrieval at CheckThat! 2025: Identifying Scientific Papers from Implicit Social Media Mentions via Hybrid Retrieval and Re-Ranking](https://arxiv.org/abs/2505.23250)
 -   [arxiv | ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT](https://arxiv.org/abs/2004.12832)
+
+### What the heck is Reranking?
+
+Reranking means that when we received some documents from RAG, we can improve the relevance and quality of information finally selected.  
+Switched from ColBERT to rerank-ts RRF (reciprocal rank fusion) for better performance and flexibility, the context scope is tiny anyway.  
+Actually, rerank-ts has RRF algorithm and LLM reranking, so here are key pros and cons of each:
+
+-   **RRF**: Combines multiple retrieval results into a single ranked list
+    -   when combining results from different search methods (dense, sparse, keyword)
+    -   particularly useful when you have results from different retrieval systems (like bm25 and vector search)
+-   **LLM Reranking**: Uses LLMs to re-evaluate and rank results based on semantic understanding
+    -   using LLM provider (openai and grok supported)
+    -   quality over speed, but can be slower and more resource-intensive
+    -   queries require deep contextual understanding beyond simple keyword matching
+    -   results are from one retrieval method and need sophisticated reordering
+-   **ColBERT**: A specific reranking model that uses late interaction over BERT embeddings.
+    -   excels for small sets of pre-retrieved documents rather than first-stage retrieval
+    -   requires significantly more compute and storage than simple approaches
+    -   best used to rerank ~100 results from initial retrieval, not as a standalone solution
+    -   handles well the final reranking stage
+
+| Method        | Accuracy  | Speed      | Cost        | Use Case                        |
+| ------------- | --------- | ---------- | ----------- | ------------------------------- |
+| RRF           | Good      | Very Fast  | Low         | Multi-source fusion             |
+| LLM Reranking | Excellent | Slow (~1s) | High        | Single-source, quality-critical |
+| ColBERT v2    | Excellent | Medium     | Medium-High | Hybrid systems, final stage     |
+
 
 ### Subtask Context Flow
 
@@ -95,16 +122,10 @@ But at least it could work, maybe with commercial models that could be even more
 
 -   **Hardware**: M1 Pro, 16GB RAM
 -   **LLM**: `bartowski/llama-3.2-3b-instruct` Q4_K_S GGUF (1.93 GB)
--   **Embeddings**: `text-embedding-nomic-embed-text-v1.5` (84 MB)
--   **Reranking**: `text-embedding-colbertv2.0` Q8_0 (118 MB)
--   **Vector DB**: Qdrant in Docker
 
 ### Query Processing Flow
 
 ```bash
-# Start Qdrant
-docker run -p 6333:6333 -p 6334:6334 -v "$(pwd)/qdrant_storage:/qdrant/storage:z" qdrant/qdrant
-
 # Create chat session
 curl -X POST http://localhost:3000/api/chat/create
 
@@ -119,8 +140,7 @@ curl -X POST http://localhost:3000/api/chat/{chatId}/ask \
 ### Prerequisites
 
 -   Node.js 20+
--   Docker (for Qdrant)
--   local LM Studio + models (as specified in example) OR OpenRouter API key
+-   local LM Studio OR OpenRouter API key
 
 ### Quick Start
 
@@ -133,11 +153,6 @@ npm install
 # Environment setup
 cp .env.example .env
 # Edit .env with your configuration
-
-# Start Qdrant vector database
-docker run -p 6333:6333 -p 6334:6334 \
-  -v "$(pwd)/qdrant_storage:/qdrant/storage:z" \
-  qdrant/qdrant
 
 # Start development server
 npm run dev

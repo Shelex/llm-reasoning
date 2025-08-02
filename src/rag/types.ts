@@ -2,19 +2,12 @@ import { Document } from "@langchain/core/documents";
 import { Embeddings } from "@langchain/core/embeddings";
 
 export interface RagConfig {
-    qdrant: {
-        url: string;
-        apiKey?: string;
-        collectionName: string;
-        vectorSize?: number;
-        distance?: "Cosine" | "Euclid" | "Dot";
+    faiss?: {
+        storagePath?: string;
+        autoSave?: boolean;
+        saveInterval?: number;
     };
     
-    colbert: {
-        modelName: string;
-        apiUrl: string;
-        topK?: number;
-    };
     
     bm25: {
         k1?: number;
@@ -50,19 +43,10 @@ export interface RelevantContext {
     metadata?: Record<string, unknown>;
 }
 
-export interface ColBERTRerankRequest {
-    query: string;
-    documents: string[];
-}
-
-export interface ColBERTRerankResponse {
-    scores: number[];
-}
 
 export interface HybridSearchResult {
     document: Document;
     vectorScore: number;
     bm25Score: number;
     combinedScore: number;
-    rerankScore?: number;
 }
